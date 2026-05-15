@@ -7,6 +7,19 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+- Paquete **AppImage** para Linux (portable, cualquier distribución).
+- Entrada de menú (`.desktop`) e icono en los paquetes `.deb` y `.rpm`:
+  RustNotes aparece en el menú de aplicaciones tras instalarlo.
+
+### Changed
+- Los archivos publicados incluyen la versión (tomada del tag) en el nombre.
+- La versión portable de Windows es ahora un `.exe` directo (antes un `.zip`).
+
+### Removed
+- Ya no se publica el binario Linux suelto sin extensión (lo sustituye el
+  AppImage).
+
 ## [0.1.0] - 2026-05-15
 
 ### Added

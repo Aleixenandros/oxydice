@@ -14,9 +14,22 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ---------- Linux: binario + .deb + .rpm ----------
-  linux:
+  # Calcula la versión a partir del tag (v0.1.0 -> 0.1.0).
+  version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  # ---------- Linux: .deb + .rpm + AppImage ----------
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - uses: actions/checkout@v5
 
@@ -29,7 +42,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Build release
+      - name: Compilar
         run: cargo build --release --locked
 
       - name: Instalar empaquetadores
@@ -37,65 +50,78 @@ jobs:
           cargo install cargo-deb --locked
           cargo install cargo-generate-rpm --locked
 
-      - name: Generar .deb
-        run: cargo deb --no-build --output target/rustnotes.deb
+      - name: Generar .deb y .rpm
+        run: |
+          cargo deb --no-build --output "rustnotes-${VERSION}-amd64.deb"
+          cargo generate-rpm --output "rustnotes-${VERSION}-x86_64.rpm"
 
-      - name: Generar .rpm
-        run: cargo generate-rpm --output target/rustnotes.rpm
+      - name: Construir AppImage
+        env:
+          OUTPUT: rustnotes-${{ needs.version.outputs.version }}-x86_64.AppImage
+        run: |
+          set -euo pipefail
+          curl -fL -o linuxdeploy.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy.AppImage
+          ./linuxdeploy.AppImage --appimage-extract-and-run \
+            --appdir AppDir \
+            --executable target/release/rustnotes \
+            --desktop-file packaging/rustnotes.desktop \
+            --icon-file packaging/rustnotes.svg \
+            --output appimage
 
       - uses: actions/upload-artifact@v4
         with:
           name: rustnotes-linux
           path: |
-            target/release/rustnotes
-            target/rustnotes.deb
-            target/rustnotes.rpm
+            rustnotes-${{ needs.version.outputs.version }}-amd64.deb
+            rustnotes-${{ needs.version.outputs.version }}-x86_64.rpm
+            rustnotes-${{ needs.version.outputs.version }}-x86_64.AppImage
 
-  # ---------- macOS: binario (tar.gz) ----------
+  # ---------- macOS: tar.gz ----------
   macos:
+    needs: version
     runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Build release
+      - name: Compilar
         run: cargo build --release --locked
 
       - name: Empaquetar tar.gz
-        run: |
-          cd target/release
-          tar -czf ../../rustnotes-macos.tar.gz rustnotes
+        run: tar -C target/release -czf "rustnotes-${VERSION}-macos.tar.gz" rustnotes
 
       - uses: actions/upload-artifact@v4
         with:
           name: rustnotes-macos
-          path: rustnotes-macos.tar.gz
+          path: rustnotes-${{ needs.version.outputs.version }}-macos.tar.gz
 
-  # ---------- Windows: instalable (.exe) + portable (.zip) ----------
+  # ---------- Windows: .exe portable ----------
   windows:
+    needs: version
     runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Build release
+      - name: Compilar
         run: cargo build --release --locked
 
-      - name: Crear versión portable (zip)
+      - name: Renombrar ejecutable portable
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item target/release/rustnotes.exe dist/
-          Compress-Archive -Path dist/rustnotes.exe -DestinationPath rustnotes-windows-portable.zip -Force
+        run: Copy-Item target/release/rustnotes.exe "rustnotes-${env:VERSION}-windows-portable.exe"
 
       - uses: actions/upload-artifact@v4
         with:
           name: rustnotes-windows
-          path: |
-            target/release/rustnotes.exe
-            rustnotes-windows-portable.zip
+          path: rustnotes-${{ needs.version.outputs.version }}-windows-portable.exe
 
-  # ---------- Publicar release con todos los artefactos ----------
+  # ---------- Publicar el Release con todos los artefactos ----------
   release:
     needs: [linux, macos, windows]
     if: startsWith(github.ref, 'refs/tags/')

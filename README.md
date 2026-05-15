@@ -18,15 +18,20 @@ multiplataforma (Linux, macOS y Windows).
 Descarga el paquete para tu sistema desde la página de
 [Releases](https://github.com/Aleixenandros/RustNotes/releases):
 
+Los nombres incluyen la versión (la del tag), p. ej. `0.1.0`:
+
 | Sistema | Archivo |
 |---|---|
-| Linux (Debian/Ubuntu) | `rustnotes.deb` |
-| Linux (Fedora/RHEL) | `rustnotes.rpm` |
-| macOS | `rustnotes-macos.tar.gz` |
-| Windows (portable) | `rustnotes-windows-portable.zip` |
-| Windows (ejecutable) | `rustnotes.exe` |
+| Linux (Debian/Ubuntu) | `rustnotes-<versión>-amd64.deb` |
+| Linux (Fedora/RHEL) | `rustnotes-<versión>-x86_64.rpm` |
+| Linux (portable, cualquier distro) | `rustnotes-<versión>-x86_64.AppImage` |
+| macOS | `rustnotes-<versión>-macos.tar.gz` |
+| Windows (portable) | `rustnotes-<versión>-windows-portable.exe` |
 
-La versión portable de Windows no requiere instalación: descomprime y ejecuta.
+Los paquetes `.deb` y `.rpm` añaden RustNotes al menú de aplicaciones.
+El **AppImage** no requiere instalación: dale permiso de ejecución y ábrelo
+(`chmod +x rustnotes-*.AppImage && ./rustnotes-*.AppImage`).
+El **.exe** de Windows es portable: ejecútalo directamente, sin instalar.
 
 ## Compilar desde el código
 
