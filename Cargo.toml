@@ -1,6 +1,6 @@
 [package]
 name = "rustnotes"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "RustNotes — aplicación nativa para crear y leer notas Markdown"
 license = "MIT"

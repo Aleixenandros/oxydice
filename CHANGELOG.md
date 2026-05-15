@@ -7,6 +7,8 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-16
+
 ### Added
 - Paquete **AppImage** para Linux (portable, cualquier distribución).
 - Entrada de menú (`.desktop`) e icono en los paquetes `.deb` y `.rpm`:
@@ -34,5 +36,6 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   ejecutable e instalable y versión portable `.zip` (Windows).
 - Las actions de CI se ejecutan en Node 24 (Node 20 quedó obsoleto).
 
-[Unreleased]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Aleixenandros/RustNotes/releases/tag/v0.1.0
