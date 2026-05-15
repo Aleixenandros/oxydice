@@ -1,0 +1,107 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------- Linux: binario + .deb + .rpm ----------
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      - name: Instalar empaquetadores
+        run: |
+          cargo install cargo-deb --locked
+          cargo install cargo-generate-rpm --locked
+
+      - name: Generar .deb
+        run: cargo deb --no-build --output target/rustnotes.deb
+
+      - name: Generar .rpm
+        run: cargo generate-rpm --output target/rustnotes.rpm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rustnotes-linux
+          path: |
+            target/release/rustnotes
+            target/rustnotes.deb
+            target/rustnotes.rpm
+
+  # ---------- macOS: binario (tar.gz) ----------
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      - name: Empaquetar tar.gz
+        run: |
+          cd target/release
+          tar -czf ../../rustnotes-macos.tar.gz rustnotes
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rustnotes-macos
+          path: rustnotes-macos.tar.gz
+
+  # ---------- Windows: instalable (.exe) + portable (.zip) ----------
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      - name: Crear versión portable (zip)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/rustnotes.exe dist/
+          Compress-Archive -Path dist/rustnotes.exe -DestinationPath rustnotes-windows-portable.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rustnotes-windows
+          path: |
+            target/release/rustnotes.exe
+            rustnotes-windows-portable.zip
+
+  # ---------- Publicar release con todos los artefactos ----------
+  release:
+    needs: [linux, macos, windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publicar GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
