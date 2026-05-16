@@ -25,13 +25,15 @@ Los nombres incluyen la versión (la del tag), p. ej. `0.1.0`:
 | Linux (Debian/Ubuntu) | `rustnotes-<versión>-amd64.deb` |
 | Linux (Fedora/RHEL) | `rustnotes-<versión>-x86_64.rpm` |
 | Linux (portable, cualquier distro) | `rustnotes-<versión>-x86_64.AppImage` |
-| macOS | `rustnotes-<versión>-macos.tar.gz` |
+| macOS | `rustnotes-<versión>-macos.dmg` |
 | Windows (portable) | `rustnotes-<versión>-windows-portable.exe` |
 
 Los paquetes `.deb` y `.rpm` añaden RustNotes al menú de aplicaciones.
 El **AppImage** no requiere instalación: dale permiso de ejecución y ábrelo
 (`chmod +x rustnotes-*.AppImage && ./rustnotes-*.AppImage`).
 El **.exe** de Windows es portable: ejecútalo directamente, sin instalar.
+En **macOS**, abre el `.dmg` y arrastra `RustNotes` a Aplicaciones. La primera
+vez ábrelo con clic derecho → Abrir (la app no está firmada con Apple).
 
 ## Compilar desde el código
 

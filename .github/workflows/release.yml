@@ -78,7 +78,7 @@ jobs:
             rustnotes-${{ needs.version.outputs.version }}-x86_64.rpm
             rustnotes-${{ needs.version.outputs.version }}-x86_64.AppImage
 
-  # ---------- macOS: tar.gz ----------
+  # ---------- macOS: RustNotes.app dentro de .dmg ----------
   macos:
     needs: version
     runs-on: macos-latest
@@ -91,13 +91,45 @@ jobs:
       - name: Compilar
         run: cargo build --release --locked
 
-      - name: Empaquetar tar.gz
-        run: tar -C target/release -czf "rustnotes-${VERSION}-macos.tar.gz" rustnotes
+      - name: Generar icono .icns
+        run: |
+          set -euo pipefail
+          brew install librsvg
+          mkdir -p icon.iconset
+          for s in 16 32 128 256 512; do
+            rsvg-convert -w "$s" -h "$s" packaging/rustnotes.svg \
+              -o "icon.iconset/icon_${s}x${s}.png"
+            d=$((s * 2))
+            rsvg-convert -w "$d" -h "$d" packaging/rustnotes.svg \
+              -o "icon.iconset/icon_${s}x${s}@2x.png"
+          done
+          iconutil -c icns icon.iconset -o rustnotes.icns
+
+      - name: Crear RustNotes.app
+        run: |
+          set -euo pipefail
+          APP="RustNotes.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release/rustnotes "$APP/Contents/MacOS/rustnotes"
+          chmod +x "$APP/Contents/MacOS/rustnotes"
+          cp rustnotes.icns "$APP/Contents/Resources/rustnotes.icns"
+          sed "s/__VERSION__/${VERSION}/g" packaging/Info.plist \
+            > "$APP/Contents/Info.plist"
+          printf 'APPL????' > "$APP/Contents/PkgInfo"
+
+      - name: Crear .dmg
+        run: |
+          set -euo pipefail
+          mkdir dmg
+          cp -R RustNotes.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname RustNotes -srcfolder dmg -ov \
+            -format UDZO "rustnotes-${VERSION}-macos.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
           name: rustnotes-macos
-          path: rustnotes-${{ needs.version.outputs.version }}-macos.tar.gz
+          path: rustnotes-${{ needs.version.outputs.version }}-macos.dmg
 
   # ---------- Windows: .exe portable ----------
   windows:

@@ -7,6 +7,12 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-16
+
+### Changed
+- macOS se distribuye como `.dmg` con un bundle `RustNotes.app` (Info.plist
+  e icono), en lugar de un binario suelto en `.tar.gz`.
+
 ## [0.1.1] - 2026-05-16
 
 ### Added
@@ -36,6 +42,7 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   ejecutable e instalable y versión portable `.zip` (Windows).
 - Las actions de CI se ejecutan en Node 24 (Node 20 quedó obsoleto).
 
-[Unreleased]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Aleixenandros/RustNotes/releases/tag/v0.1.0
