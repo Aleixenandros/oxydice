@@ -4,13 +4,15 @@ Aplicación de escritorio nativa, escrita en Rust, para crear y leer notas en
 Markdown organizadas en una carpeta (*vault*). Rápida, de un solo binario y
 multiplataforma (Linux, macOS y Windows).
 
-> Estado: versión inicial (0.1.0). Funcionalidad mínima viable.
-
 ## Características
 
-- Abrir cualquier carpeta como *vault* y listar sus notas `.md` (recursivo).
-- Editor de texto Markdown con guardado a disco.
-- Vista previa de Markdown en vivo junto al editor.
+- **Espacios**: registra varias carpetas como espacios y cambia entre ellas
+  desde la barra lateral; el espacio activo se recuerda entre sesiones.
+- **Árbol de carpetas y notas** por espacio: crear notas y carpetas (también
+  con clic derecho sobre una carpeta).
+- Editor Markdown con guardado a disco y **vista previa en vivo**.
+- **Temas**: claro, oscuro y sistema; la preferencia se guarda.
+- Interfaz limpia y moderna al estilo Obsidian.
 - Los datos son archivos de texto plano: siempre legibles fuera de la app.
 
 ## Instalación
@@ -56,10 +58,13 @@ sudo apt-get install -y \
 
 ## Uso
 
-1. Pulsa **📂 Abrir vault** y elige una carpeta con notas `.md`.
-2. Selecciona una nota en la lista de la izquierda.
-3. Edita en el panel central; la vista previa se actualiza a la derecha.
-4. Pulsa **💾 Guardar** para escribir los cambios a disco.
+1. Pulsa **＋ Añadir espacio** y elige una carpeta: será un espacio.
+2. Crea notas y carpetas con **＋ Nota** / **＋ Carpeta** (o clic derecho
+   sobre una carpeta del árbol).
+3. Selecciona una nota en el árbol y edítala en el panel central; la vista
+   previa se actualiza a la derecha.
+4. Pulsa **Guardar** para escribir los cambios a disco.
+5. Cambia el tema (claro / oscuro / sistema) desde la barra superior.
 
 ## Próximos pasos
 

@@ -7,6 +7,20 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-16
+
+### Added
+- **Espacios**: registra varias carpetas como espacios y cámbialos desde un
+  selector en la barra lateral; el espacio activo se recuerda entre sesiones.
+- **Árbol de carpetas y notas** por espacio, con crear nota y crear carpeta
+  (también con clic derecho sobre una carpeta).
+- **Temas** claro, oscuro y sistema; la preferencia se guarda.
+- Barra superior con breadcrumb (espacio / nota) y barra lateral ocultable.
+
+### Changed
+- Interfaz rediseñada al estilo Obsidian (barra lateral + editor + vista
+  previa), con un aspecto limpio y moderno.
+
 ### Removed
 - Workflow de integración continua (`ci.yml`): la automatización se ejecuta
   únicamente al publicar una versión (tag `v*`).
@@ -46,7 +60,8 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   ejecutable e instalable y versión portable `.zip` (Windows).
 - Las actions de CI se ejecutan en Node 24 (Node 20 quedó obsoleto).
 
-[Unreleased]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/Aleixenandros/RustNotes/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Aleixenandros/RustNotes/releases/tag/v0.1.0
