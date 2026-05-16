@@ -4,6 +4,26 @@ use crate::theme::{Palette, SYSTEM_ID};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Familia tipográfica del editor (guía de estilo §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EditorFont {
+    /// JetBrains Mono — monoespaciada, por defecto para Markdown.
+    Mono,
+    /// Inter — proporcional, lectura más cómoda en prosa.
+    Sans,
+}
+
+impl EditorFont {
+    pub const ALL: [EditorFont; 2] = [EditorFont::Mono, EditorFont::Sans];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            EditorFont::Mono => "JetBrains Mono",
+            EditorFont::Sans => "Inter",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -17,6 +37,10 @@ pub struct Config {
     pub custom_theme: Palette,
     /// Id de la extensión de sincronización activa.
     pub sync: String,
+    /// Familia tipográfica del editor.
+    pub editor_font: EditorFont,
+    /// Tamaño de fuente del editor en puntos.
+    pub editor_font_size: f32,
     /// Escala de la interfaz (1.0 = normal).
     pub ui_scale: f32,
     /// Carpeta destino de las copias de seguridad.
@@ -33,6 +57,8 @@ impl Default for Config {
             theme: SYSTEM_ID.to_owned(),
             custom_theme: Palette::default(),
             sync: "none".to_owned(),
+            editor_font: EditorFont::Mono,
+            editor_font_size: 14.0,
             ui_scale: 1.0,
             backup_dir: None,
             backup_on_save: false,

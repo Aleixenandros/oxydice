@@ -2,7 +2,9 @@
 
 mod app;
 mod config;
+mod doc;
 mod ext;
+mod search;
 mod theme;
 
 use eframe::egui;

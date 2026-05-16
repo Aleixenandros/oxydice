@@ -2,6 +2,40 @@
 
 Todos los cambios notables de RustNotes se documentan en este archivo.
 
+## [0.6.0] - 2026-05-16
+
+### Added
+
+- **Autoguardado**: las notas se escriben a disco solas tras dejar de
+  escribir; ya no hay botón «Guardar». Se vacía lo pendiente al cambiar de
+  nota, al cerrar y con `Ctrl+S`.
+- **Búsqueda global** (icono en el rail): busca texto en todas las notas del
+  espacio, con ruta, número de línea, fragmento y término resaltado; abrir
+  un resultado salta a la línea.
+- **Vista de lectura con metadatos**: cabecera con título, fecha de
+  modificación, estado, autor y *chips* de etiquetas leídos del
+  *frontmatter* YAML; alternancia **Editar / Vista**.
+- **Esquema (outline)**: panel con el árbol de encabezados del documento;
+  al pulsar uno, el cursor salta a esa línea.
+- **Ajustes** rediseñados como página completa con tarjetas: apariencia
+  (tema, **fuente del editor**, **tamaño de fuente**, escala), proveedores
+  de sincronización con **registro de actividad**, copia de seguridad,
+  extensiones y «acerca de».
+- **Medianil de números de línea** en el editor, alineado al ajuste real.
+
+### Changed
+
+- Rediseño guiado por los mockups: **rail de navegación** (Explorador /
+  Buscar / Ajustes) con marca, cabeceras de documento, tarjetas, *chips* y
+  control segmentado, manteniendo la paleta del tema.
+
+### Fixed
+
+- El tema **«Sistema»** ya no se confunde con oscuro: si el SO no declara su
+  preferencia (habitual en Linux/X11) se cae a **claro**, no a oscuro.
+- Menús contextuales del árbol (clic derecho) revisados y consistentes en
+  carpetas y notas.
+
 ## [0.5.0] - 2026-05-16
 
 ### Added
@@ -117,6 +151,7 @@ Todos los cambios notables de RustNotes se documentan en este archivo.
   ejecutable e instalable y versión portable `.zip` (Windows).
 - Las actions de CI se ejecutan en Node 24 (Node 20 quedó obsoleto).
 
+[0.6.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.2.0...v0.3.0

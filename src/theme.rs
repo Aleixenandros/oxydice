@@ -98,10 +98,15 @@ pub const SYSTEM_ID: &str = "System";
 pub const CUSTOM_ID: &str = "Custom";
 
 /// Paleta que sigue al tema del sistema operativo.
+///
+/// Si el SO declara su preferencia se respeta. Cuando no se puede detectar
+/// (común en Linux/X11), se cae a **claro** —no a oscuro— para no confundir
+/// «Sistema» con un tema oscuro forzado: el usuario siempre puede fijar
+/// Claro u Oscuro de forma explícita.
 pub fn system_palette(ctx: &egui::Context) -> Palette {
     match ctx.system_theme() {
-        Some(egui::Theme::Light) => LIGHT,
-        _ => DARK,
+        Some(egui::Theme::Dark) => DARK,
+        _ => LIGHT,
     }
 }
 
