@@ -9,10 +9,6 @@ on:
 permissions:
   contents: write
 
-env:
-  # Ejecuta las actions de JavaScript en Node 24 (Node 20 está obsoleto).
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # Calcula la versión a partir del tag (v0.1.0 -> 0.1.0).
   version:
@@ -70,7 +66,7 @@ jobs:
             --icon-file packaging/rustnotes.svg \
             --output appimage
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: rustnotes-linux
           path: |
@@ -126,7 +122,7 @@ jobs:
           hdiutil create -volname RustNotes -srcfolder dmg -ov \
             -format UDZO "rustnotes-${VERSION}-macos.dmg"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: rustnotes-macos
           path: rustnotes-${{ needs.version.outputs.version }}-macos.dmg
@@ -148,7 +144,7 @@ jobs:
         shell: pwsh
         run: Copy-Item target/release/rustnotes.exe "rustnotes-${env:VERSION}-windows-portable.exe"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: rustnotes-windows
           path: rustnotes-${{ needs.version.outputs.version }}-windows-portable.exe
@@ -159,7 +155,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: artifacts
 

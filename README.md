@@ -8,12 +8,15 @@ multiplataforma (Linux, macOS y Windows).
 
 - **Espacios**: registra varias carpetas como espacios y cambia entre ellas
   desde la barra lateral; el espacio activo se recuerda entre sesiones.
-- **Árbol de carpetas y notas** por espacio: crear notas y carpetas (también
-  con clic derecho sobre una carpeta).
+- **Árbol de carpetas y notas** por espacio, con **menú contextual** (clic
+  derecho): crear nota, crear carpeta, renombrar y eliminar (con
+  confirmación), tanto en carpetas como en notas.
 - Editor Markdown con guardado a disco y **vista previa en vivo**.
-- **Temas**: claro, oscuro y sistema; la preferencia se guarda.
+- **Temas**: presets Claro, Oscuro, Sistema, Nord, Solarized y Dracula, más
+  un tema **Personalizado** con editor de colores; **exportar/importar** el
+  tema como archivo `.json`.
 - **Preferencias** (⚙): apariencia y escala, copia de seguridad y "acerca de".
-- Interfaz limpia y moderna al estilo Obsidian.
+- Interfaz moderna y minimalista, guiada por la paleta del tema.
 - Los datos son archivos de texto plano: siempre legibles fuera de la app.
 
 ## Instalación
@@ -21,7 +24,7 @@ multiplataforma (Linux, macOS y Windows).
 Descarga el paquete para tu sistema desde la página de
 [Releases](https://github.com/Aleixenandros/RustNotes/releases):
 
-Los nombres incluyen la versión (la del tag), p. ej. `0.1.0`:
+Los nombres incluyen la versión (la del tag), p. ej. `0.4.0`:
 
 | Sistema | Archivo |
 |---|---|
@@ -60,12 +63,13 @@ sudo apt-get install -y \
 ## Uso
 
 1. Pulsa **＋ Añadir espacio** y elige una carpeta: será un espacio.
-2. Crea notas y carpetas con **＋ Nota** / **＋ Carpeta** (o clic derecho
-   sobre una carpeta del árbol).
+2. Crea notas y carpetas con **＋ Nota** / **＋ Carpeta**, o con **clic
+   derecho** sobre una carpeta o nota del árbol (crear, renombrar, eliminar).
 3. Selecciona una nota en el árbol y edítala en el panel central; la vista
    previa se actualiza a la derecha.
 4. Pulsa **Guardar** para escribir los cambios a disco.
-5. Cambia el tema (claro / oscuro / sistema) desde la barra superior.
+5. Elige el tema desde la barra superior o en **Preferencias › Apariencia**,
+   donde además puedes personalizar los colores y exportar/importar el tema.
 
 ## Próximos pasos
 

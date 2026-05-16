@@ -1,7 +1,7 @@
 //! Aplicación: espacios, árbol de carpetas/notas, editor y vista previa.
 
 use crate::config::Config;
-use crate::theme::{self, ThemeChoice};
+use crate::theme::{self, Palette, ThemeChoice};
 use eframe::egui;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use std::path::{Path, PathBuf};
@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 enum DialogKind {
     NewNote,
     NewFolder,
+    /// Renombrar la ruta indicada (archivo o carpeta).
+    Rename(PathBuf),
 }
 
 struct Dialog {
@@ -26,10 +28,35 @@ impl Dialog {
         }
     }
 
+    /// Diálogo de renombrado con el nombre actual precargado.
+    fn rename(target: PathBuf) -> Self {
+        let parent = target
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let name = target
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Self {
+            kind: DialogKind::Rename(target),
+            parent,
+            name,
+        }
+    }
+
     fn title(&self) -> &'static str {
         match self.kind {
             DialogKind::NewNote => "Nueva nota",
             DialogKind::NewFolder => "Nueva carpeta",
+            DialogKind::Rename(_) => "Renombrar",
+        }
+    }
+
+    fn submit_label(&self) -> &'static str {
+        match self.kind {
+            DialogKind::Rename(_) => "Renombrar",
+            _ => "Crear",
         }
     }
 }
@@ -45,6 +72,7 @@ pub struct RustNotes {
     show_preview: bool,
     style_installed: bool,
     dialog: Option<Dialog>,
+    pending_delete: Option<PathBuf>,
     show_prefs: bool,
     prefs_tab: PrefsTab,
 }
@@ -81,6 +109,7 @@ impl RustNotes {
             show_preview: true,
             style_installed: false,
             dialog: None,
+            pending_delete: None,
             show_prefs: false,
             prefs_tab: PrefsTab::Appearance,
         }
@@ -150,7 +179,7 @@ impl RustNotes {
 
     fn apply_dialog(&mut self, dialog: &Dialog) {
         let name = dialog.name.trim();
-        match dialog.kind {
+        match &dialog.kind {
             DialogKind::NewFolder => {
                 let path = dialog.parent.join(name);
                 match std::fs::create_dir_all(&path) {
@@ -170,6 +199,64 @@ impl RustNotes {
                     Err(e) => self.status = format!("Error: {e}"),
                 }
             }
+            DialogKind::Rename(old) => {
+                // Conserva la extensión .md de las notas aunque se omita.
+                let leaf = if old.is_file() && !name.ends_with(".md") {
+                    format!("{name}.md")
+                } else {
+                    name.to_owned()
+                };
+                let new_path = dialog.parent.join(&leaf);
+                if new_path == *old {
+                    return;
+                }
+                if new_path.exists() {
+                    self.status = format!("Ya existe «{leaf}»");
+                    return;
+                }
+                match std::fs::rename(old, &new_path) {
+                    Ok(()) => {
+                        self.remap_current(old, &new_path);
+                        self.status = format!("Renombrado a {leaf}");
+                    }
+                    Err(e) => self.status = format!("Error al renombrar: {e}"),
+                }
+            }
+        }
+    }
+
+    /// Reapunta la nota abierta tras renombrar su archivo o una carpeta padre.
+    fn remap_current(&mut self, old: &Path, new: &Path) {
+        let Some(cur) = self.current.clone() else {
+            return;
+        };
+        if cur == old {
+            self.current = Some(new.to_path_buf());
+        } else if let Ok(rest) = cur.strip_prefix(old) {
+            self.current = Some(new.join(rest));
+        }
+    }
+
+    fn delete_path(&mut self, path: &Path) {
+        let res = if path.is_dir() {
+            std::fs::remove_dir_all(path)
+        } else {
+            std::fs::remove_file(path)
+        };
+        match res {
+            Ok(()) => {
+                if self
+                    .current
+                    .as_deref()
+                    .is_some_and(|c| c == path || c.starts_with(path))
+                {
+                    self.current = None;
+                    self.buffer.clear();
+                    self.dirty = false;
+                }
+                self.status = "Eliminado".to_owned();
+            }
+            Err(e) => self.status = format!("Error al eliminar: {e}"),
         }
     }
 
@@ -177,13 +264,11 @@ impl RustNotes {
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("topbar").show_inside(ui, |ui| {
-            ui.add_space(2.0);
+            ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui
-                    .button("▤")
-                    .on_hover_text("Mostrar/ocultar barra lateral")
-                    .clicked()
-                {
+                ui.spacing_mut().item_spacing.x = 4.0;
+
+                if icon_button(ui, "▤", "Mostrar/ocultar barra lateral").clicked() {
                     self.show_sidebar = !self.show_sidebar;
                 }
                 ui.menu_button("☰", |ui| {
@@ -203,19 +288,24 @@ impl RustNotes {
                     }
                 });
 
-                ui.separator();
+                ui.add_space(8.0);
                 let crumb = match (self.config.selected_space(), &self.current) {
                     (Some(sp), Some(note)) => {
                         let rel = note.strip_prefix(sp).unwrap_or(note);
-                        format!("{} / {}", file_name(sp), rel.to_string_lossy())
+                        format!("{}  ›  {}", file_name(sp), rel.to_string_lossy())
                     }
                     (Some(sp), None) => file_name(sp),
                     _ => "Sin espacio".to_owned(),
                 };
-                ui.label(egui::RichText::new(crumb).weak());
+                ui.label(
+                    egui::RichText::new(crumb)
+                        .color(ui.visuals().weak_text_color()),
+                );
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("⚙").on_hover_text("Preferencias").clicked() {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+
+                    if icon_button(ui, "⚙", "Preferencias").clicked() {
                         self.show_prefs = true;
                     }
 
@@ -232,24 +322,23 @@ impl RustNotes {
                         self.config.save();
                     }
 
-                    if ui
-                        .selectable_label(self.show_preview, "👁")
-                        .on_hover_text("Vista previa")
-                        .clicked()
-                    {
+                    let eye = if self.show_preview { "◑" } else { "○" };
+                    if icon_button(ui, eye, "Vista previa").clicked() {
                         self.show_preview = !self.show_preview;
                     }
 
                     let can_save = self.current.is_some() && self.dirty;
-                    if ui
-                        .add_enabled(can_save, egui::Button::new("Guardar"))
-                        .clicked()
-                    {
+                    let accent = ui.visuals().hyperlink_color;
+                    let save = egui::Button::new(
+                        egui::RichText::new("Guardar").color(theme::contrast_on(accent)),
+                    )
+                    .fill(accent);
+                    if ui.add_enabled(can_save, save).clicked() {
                         self.save();
                     }
                     if !self.status.is_empty() {
                         let txt = if self.dirty {
-                            format!("{} ·  sin guardar", self.status)
+                            format!("{}  ·  sin guardar", self.status)
                         } else {
                             self.status.clone()
                         };
@@ -257,7 +346,8 @@ impl RustNotes {
                     }
                 });
             });
-            ui.add_space(2.0);
+            ui.add_space(6.0);
+            ui.separator();
         });
     }
 
@@ -342,22 +432,43 @@ impl RustNotes {
     fn tree(&mut self, ui: &mut egui::Ui, dir: &Path) {
         for path in entries(dir) {
             if path.is_dir() {
-                let title = format!("🗀  {}", file_name(&path));
-                let resp = egui::CollapsingHeader::new(title)
+                let resp = egui::CollapsingHeader::new(file_name(&path))
                     .id_salt(&path)
                     .show(ui, |ui| self.tree(ui, &path));
                 resp.header_response.context_menu(|ui| {
-                    if ui.button("＋  Nueva nota").clicked() {
+                    if ui.button("Nueva nota").clicked() {
                         self.dialog = Some(Dialog::new(DialogKind::NewNote, path.clone()));
+                        ui.close();
                     }
-                    if ui.button("＋  Nueva carpeta").clicked() {
+                    if ui.button("Nueva carpeta").clicked() {
                         self.dialog = Some(Dialog::new(DialogKind::NewFolder, path.clone()));
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Renombrar…").clicked() {
+                        self.dialog = Some(Dialog::rename(path.clone()));
+                        ui.close();
+                    }
+                    if ui.button("Eliminar").clicked() {
+                        self.pending_delete = Some(path.clone());
+                        ui.close();
                     }
                 });
             } else {
                 let selected = self.current.as_deref() == Some(path.as_path());
-                let label = format!("📄  {}", file_stem(&path));
-                if ui.selectable_label(selected, label).clicked() {
+                let row = egui::Button::selectable(selected, file_stem(&path));
+                let resp = ui.add_sized([ui.available_width(), 26.0], row);
+                resp.context_menu(|ui| {
+                    if ui.button("Renombrar…").clicked() {
+                        self.dialog = Some(Dialog::rename(path.clone()));
+                        ui.close();
+                    }
+                    if ui.button("Eliminar").clicked() {
+                        self.pending_delete = Some(path.clone());
+                        ui.close();
+                    }
+                });
+                if resp.clicked() {
                     self.open_note(path.clone());
                 }
             }
@@ -380,6 +491,8 @@ impl RustNotes {
                 ui.available_size(),
                 egui::TextEdit::multiline(&mut self.buffer)
                     .code_editor()
+                    .frame(egui::Frame::NONE)
+                    .margin(egui::Margin::same(16))
                     .desired_width(f32::INFINITY),
             );
             if resp.changed() {
@@ -423,7 +536,7 @@ impl RustNotes {
                 let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Crear").clicked() || enter {
+                    if ui.button(dialog.submit_label()).clicked() || enter {
                         submit = true;
                     }
                     if ui.button("Cancelar").clicked() {
@@ -436,6 +549,52 @@ impl RustNotes {
             self.apply_dialog(&dialog);
         } else if keep && !submit {
             self.dialog = Some(dialog);
+        }
+    }
+
+    fn confirm_window(&mut self, ui: &mut egui::Ui) {
+        let Some(path) = self.pending_delete.clone() else {
+            return;
+        };
+        let mut keep = true;
+        let mut confirmed = false;
+        let is_dir = path.is_dir();
+        egui::Window::new("Eliminar")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+                let what = if is_dir {
+                    "esta carpeta y todo su contenido"
+                } else {
+                    "esta nota"
+                };
+                ui.label(format!("¿Eliminar {what}?"));
+                ui.label(
+                    egui::RichText::new(file_name(&path))
+                        .small()
+                        .weak(),
+                );
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    let danger = egui::Color32::from_rgb(201, 74, 74);
+                    let del = egui::Button::new(
+                        egui::RichText::new("Eliminar").color(theme::contrast_on(danger)),
+                    )
+                    .fill(danger);
+                    if ui.add(del).clicked() {
+                        confirmed = true;
+                    }
+                    if ui.button("Cancelar").clicked() {
+                        keep = false;
+                    }
+                });
+            });
+
+        if confirmed {
+            self.delete_path(&path);
+        } else if keep {
+            self.pending_delete = Some(path);
         }
     }
 
@@ -477,13 +636,16 @@ impl RustNotes {
 
     fn prefs_appearance(&mut self, ui: &mut egui::Ui) {
         ui.heading("Apariencia");
-        ui.add_space(8.0);
+        ui.add_space(12.0);
 
-        ui.label("Tema");
+        ui.label(egui::RichText::new("TEMA").small().weak());
+        ui.add_space(6.0);
         let mut theme = self.config.theme;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             for opt in ThemeChoice::ALL {
-                ui.selectable_value(&mut theme, opt, opt.label());
+                if ui.selectable_label(theme == opt, opt.label()).clicked() {
+                    theme = opt;
+                }
             }
         });
         if theme != self.config.theme {
@@ -491,8 +653,73 @@ impl RustNotes {
             self.config.save();
         }
 
-        ui.add_space(14.0);
-        ui.label("Escala de la interfaz");
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            if ui.button("Exportar tema…").clicked() {
+                self.export_theme(ui.ctx());
+            }
+            if ui.button("Importar tema…").clicked() {
+                self.import_theme();
+            }
+        });
+        if !self.status.is_empty() {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(&self.status).small().weak());
+        }
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(12.0);
+
+        ui.label(egui::RichText::new("TEMA PERSONALIZADO").small().weak());
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new("Editar un color selecciona el tema «Personalizado».")
+                .small()
+                .weak(),
+        );
+        ui.add_space(8.0);
+
+        if ui
+            .button("Partir del tema actual")
+            .on_hover_text("Copia la paleta visible para retocarla")
+            .clicked()
+        {
+            self.config.custom_theme = self
+                .config
+                .theme
+                .palette(ui.ctx(), &self.config.custom_theme);
+            self.config.theme = ThemeChoice::Custom;
+            self.config.save();
+        }
+
+        ui.add_space(10.0);
+        let mut changed = false;
+        {
+            let c = &mut self.config.custom_theme;
+            changed |= color_row(ui, "Acento", &mut c.accent);
+            changed |= color_row(ui, "Fondo del editor", &mut c.bg);
+            changed |= color_row(ui, "Superficie (paneles)", &mut c.surface);
+            changed |= color_row(ui, "Texto", &mut c.text);
+            changed |= color_row(ui, "Texto atenuado", &mut c.muted);
+            changed |= color_row(ui, "Bordes", &mut c.border);
+            ui.add_space(4.0);
+            changed |= ui
+                .checkbox(&mut c.dark, "Base oscura (sombras y contraste)")
+                .changed();
+        }
+        if changed {
+            self.config.theme = ThemeChoice::Custom;
+            self.config.save();
+        }
+
+        ui.add_space(18.0);
+        ui.separator();
+        ui.add_space(12.0);
+
+        ui.label(egui::RichText::new("INTERFAZ").small().weak());
+        ui.add_space(6.0);
+        ui.label("Escala");
         let mut scale = self.config.ui_scale;
         if ui
             .add(egui::Slider::new(&mut scale, 0.8..=1.6).step_by(0.05))
@@ -500,6 +727,46 @@ impl RustNotes {
         {
             self.config.ui_scale = scale;
             self.config.save();
+        }
+    }
+
+    fn export_theme(&mut self, ctx: &egui::Context) {
+        let palette = self.config.theme.palette(ctx, &self.config.custom_theme);
+        let suggested = format!("rustnotes-{}.json", self.config.theme.label().to_lowercase());
+        let Some(path) = rfd::FileDialog::new()
+            .set_file_name(suggested)
+            .add_filter("Tema JSON", &["json"])
+            .save_file()
+        else {
+            return;
+        };
+        self.status = match serde_json::to_string_pretty(&palette) {
+            Ok(json) => match std::fs::write(&path, json) {
+                Ok(()) => format!("Tema exportado: {}", path.display()),
+                Err(e) => format!("Error al exportar: {e}"),
+            },
+            Err(e) => format!("Error al serializar: {e}"),
+        };
+    }
+
+    fn import_theme(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Tema JSON", &["json"])
+            .pick_file()
+        else {
+            return;
+        };
+        match std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Palette>(&raw).ok())
+        {
+            Some(p) => {
+                self.config.custom_theme = p;
+                self.config.theme = ThemeChoice::Custom;
+                self.config.save();
+                self.status = "Tema importado y aplicado".to_owned();
+            }
+            None => self.status = "Archivo de tema no válido".to_owned(),
         }
     }
 
@@ -602,7 +869,11 @@ impl eframe::App for RustNotes {
             theme::install_style(ui.ctx());
             self.style_installed = true;
         }
-        theme::apply(ui.ctx(), self.config.theme);
+        let palette = self
+            .config
+            .theme
+            .palette(ui.ctx(), &self.config.custom_theme);
+        theme::apply(ui.ctx(), &palette);
         if (ui.ctx().zoom_factor() - self.config.ui_scale).abs() > f32::EPSILON {
             ui.ctx().set_zoom_factor(self.config.ui_scale);
         }
@@ -621,14 +892,44 @@ impl eframe::App for RustNotes {
                 .default_size(440.0)
                 .show_inside(ui, |ui| self.preview(ui));
         }
-        egui::CentralPanel::default().show_inside(ui, |ui| self.center(ui));
+        let canvas = egui::Frame::central_panel(ui.style())
+            .fill(egui::Color32::from_rgb(
+                palette.bg[0],
+                palette.bg[1],
+                palette.bg[2],
+            ))
+            .inner_margin(egui::Margin::ZERO);
+        egui::CentralPanel::default()
+            .frame(canvas)
+            .show_inside(ui, |ui| self.center(ui));
 
         self.dialog_window(ui);
+        self.confirm_window(ui);
         self.preferences_window(ui);
     }
 }
 
 // ---- utilidades ---------------------------------------------------------
+
+/// Fila «muestra de color + etiqueta» del editor de tema.
+fn color_row(ui: &mut egui::Ui, label: &str, rgb: &mut theme::Rgb) -> bool {
+    ui.horizontal(|ui| {
+        let changed = ui.color_edit_button_srgb(rgb).changed();
+        ui.label(label);
+        changed
+    })
+    .inner
+}
+
+/// Botón de icono sin marco, tamaño uniforme: aspecto limpio en la barra.
+fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(egui::RichText::new(glyph).size(16.0))
+            .frame(false)
+            .min_size(egui::vec2(32.0, 28.0)),
+    )
+    .on_hover_text(tip)
+}
 
 fn file_name(p: &Path) -> String {
     p.file_name()

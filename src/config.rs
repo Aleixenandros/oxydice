@@ -1,6 +1,6 @@
 //! Configuración persistente: espacios, espacio activo y tema.
 
-use crate::theme::ThemeChoice;
+use crate::theme::{Palette, ThemeChoice};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -12,6 +12,8 @@ pub struct Config {
     /// Índice del espacio activo dentro de `spaces`.
     pub selected: Option<usize>,
     pub theme: ThemeChoice,
+    /// Paleta del tema «Personalizado», editable y exportable.
+    pub custom_theme: Palette,
     /// Escala de la interfaz (1.0 = normal).
     pub ui_scale: f32,
     /// Carpeta destino de las copias de seguridad.
@@ -26,6 +28,7 @@ impl Default for Config {
             spaces: Vec::new(),
             selected: None,
             theme: ThemeChoice::default(),
+            custom_theme: Palette::default(),
             ui_scale: 1.0,
             backup_dir: None,
             backup_on_save: false,

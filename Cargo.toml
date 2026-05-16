@@ -1,6 +1,6 @@
 [package]
 name = "rustnotes"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "RustNotes — aplicación nativa para crear y leer notas Markdown"
 license = "MIT"
@@ -13,7 +13,7 @@ egui_commonmark = "0.23"
 rfd = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-directories = "5"
+directories = "6"
 
 [profile.release]
 strip = true

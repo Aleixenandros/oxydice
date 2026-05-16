@@ -2,6 +2,28 @@
 
 Todos los cambios notables de RustNotes se documentan en este archivo.
 
+## [0.4.0] - 2026-05-16
+
+### Added
+
+- **Temas**: presets curados Nord, Solarized y Dracula, además de
+  Claro/Oscuro/Sistema, y un tema **Personalizado** con editor de colores
+  (acento, fondo del editor, superficie, texto, texto atenuado y bordes).
+- **Exportar / importar tema** como archivo `.json`.
+- **Menú contextual** (clic derecho) en el árbol, sobre carpetas y notas:
+  crear nota, crear carpeta, **renombrar** y **eliminar** (con confirmación).
+
+### Changed
+
+- Rediseño visual moderno y minimalista guiado por la paleta del tema:
+  tipografía y espaciado refinados, superficies planas, bordes sutiles,
+  acento de color, barra superior con iconos sin marco y lienzo de edición
+  a sangre.
+- `directories` actualizada a la v6; el resto de dependencias en su última
+  versión.
+- Workflow de release: `actions/upload-artifact` y `download-artifact` a v5
+  (Node 24 nativo); eliminado el forzado manual de Node.
+
 ## [0.3.0] - 2026-05-16
 
 ### Added
@@ -73,6 +95,7 @@ Todos los cambios notables de RustNotes se documentan en este archivo.
   ejecutable e instalable y versión portable `.zip` (Windows).
 - Las actions de CI se ejecutan en Node 24 (Node 20 quedó obsoleto).
 
+[0.4.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.1...v0.1.2
