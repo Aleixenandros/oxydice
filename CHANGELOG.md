@@ -7,6 +7,10 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Removed
+- Workflow de integración continua (`ci.yml`): la automatización se ejecuta
+  únicamente al publicar una versión (tag `v*`).
+
 ## [0.1.2] - 2026-05-16
 
 ### Changed
