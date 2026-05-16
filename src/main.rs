@@ -2,6 +2,7 @@
 
 mod app;
 mod config;
+mod ext;
 mod theme;
 
 use eframe::egui;

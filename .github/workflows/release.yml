@@ -144,10 +144,21 @@ jobs:
         shell: pwsh
         run: Copy-Item target/release/rustnotes.exe "rustnotes-${env:VERSION}-windows-portable.exe"
 
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Construir instalador
+        shell: pwsh
+        run: >
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          /DMyAppVersion=$env:VERSION packaging\rustnotes.iss
+
       - uses: actions/upload-artifact@v5
         with:
           name: rustnotes-windows
-          path: rustnotes-${{ needs.version.outputs.version }}-windows-portable.exe
+          path: |
+            rustnotes-${{ needs.version.outputs.version }}-windows-portable.exe
+            rustnotes-${{ needs.version.outputs.version }}-windows-setup.exe
 
   # ---------- Publicar el Release con todos los artefactos ----------
   release:

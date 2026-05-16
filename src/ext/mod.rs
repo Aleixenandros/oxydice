@@ -1,0 +1,126 @@
+//! Sistema de extensiones *in-tree*.
+//!
+//! Las extensiones se compilan dentro del binario (no hay carga dinámica de
+//! `.so`/`.dll`): cada una implementa un *trait* y se registra en el
+//! [`Registry`]. Los temas y la sincronización son extensiones; añadir un
+//! backend nuevo es implementar el trait correspondiente y registrarlo aquí.
+
+pub mod sync;
+pub mod theme;
+
+use crate::theme::Palette;
+use eframe::egui;
+
+/// Clase de extensión, para listarlas en Preferencias.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtKind {
+    Theme,
+    Sync,
+}
+
+impl ExtKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            ExtKind::Theme => "Tema",
+            ExtKind::Sync => "Sincronización",
+        }
+    }
+}
+
+/// Metadatos comunes a toda extensión.
+pub trait Extension {
+    fn id(&self) -> &'static str;
+    fn name(&self) -> &'static str;
+    fn kind(&self) -> ExtKind;
+}
+
+/// Registro de extensiones activas del binario.
+pub struct Registry {
+    themes: Vec<Box<dyn theme::ThemeExtension>>,
+    syncs: Vec<Box<dyn sync::SyncProvider>>,
+}
+
+impl Registry {
+    /// Registra las extensiones integradas.
+    pub fn builtin() -> Self {
+        Self {
+            themes: vec![Box::new(theme::CoreThemes)],
+            syncs: vec![Box::new(sync::NoSync)],
+        }
+    }
+
+    /// Catálogo plano de temas de paleta fija aportados por las extensiones.
+    pub fn theme_entries(&self) -> Vec<theme::ThemeEntry> {
+        self.themes.iter().flat_map(|e| e.themes()).collect()
+    }
+
+    /// Resuelve un id de tema a su paleta. Maneja los ids especiales
+    /// `System` (sigue al SO) y `Custom` (paleta editable del usuario).
+    pub fn resolve_theme(
+        &self,
+        id: &str,
+        ctx: &egui::Context,
+        custom: &Palette,
+    ) -> Palette {
+        if id == crate::theme::CUSTOM_ID {
+            return *custom;
+        }
+        if id == crate::theme::SYSTEM_ID {
+            return crate::theme::system_palette(ctx);
+        }
+        self.theme_entries()
+            .into_iter()
+            .find(|t| t.id == id)
+            .map(|t| t.palette)
+            .unwrap_or_else(|| crate::theme::system_palette(ctx))
+    }
+
+    /// Nombre legible de un id de tema (para el selector).
+    pub fn theme_name(&self, id: &str) -> String {
+        if id == crate::theme::SYSTEM_ID {
+            return "Sistema".to_owned();
+        }
+        if id == crate::theme::CUSTOM_ID {
+            return "Personalizado".to_owned();
+        }
+        self.theme_entries()
+            .into_iter()
+            .find(|t| t.id == id)
+            .map(|t| t.name.to_owned())
+            .unwrap_or_else(|| id.to_owned())
+    }
+
+    pub fn syncs(&self) -> &[Box<dyn sync::SyncProvider>] {
+        &self.syncs
+    }
+
+    /// Proveedor de sync activo según su id (cae al primero si no existe).
+    pub fn sync_by_id(&self, id: &str) -> &dyn sync::SyncProvider {
+        self.syncs
+            .iter()
+            .find(|s| s.id() == id)
+            .unwrap_or(&self.syncs[0])
+            .as_ref()
+    }
+
+    /// Lanza la sincronización del proveedor indicado (stub: no-op).
+    pub fn sync_now(&mut self, id: &str) -> Result<(), String> {
+        match self.syncs.iter_mut().find(|s| s.id() == id) {
+            Some(p) => p.sync(),
+            None => Ok(()),
+        }
+    }
+
+    /// Filas `(clase, id, nombre, detalle)` para la pestaña de Extensiones.
+    pub fn listing(&self) -> Vec<(ExtKind, &'static str, &'static str, String)> {
+        let mut rows = Vec::new();
+        for t in &self.themes {
+            let n = t.themes().len();
+            rows.push((t.kind(), t.id(), t.name(), format!("{n} temas")));
+        }
+        for s in &self.syncs {
+            rows.push((s.kind(), s.id(), s.name(), s.state().label().to_owned()));
+        }
+        rows
+    }
+}

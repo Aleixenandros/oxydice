@@ -1,7 +1,9 @@
 //! Aplicación: espacios, árbol de carpetas/notas, editor y vista previa.
 
 use crate::config::Config;
-use crate::theme::{self, Palette, ThemeChoice};
+use crate::ext::sync::SyncState;
+use crate::ext::Registry;
+use crate::theme::{self, Palette, CUSTOM_ID, SYSTEM_ID};
 use eframe::egui;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use std::path::{Path, PathBuf};
@@ -75,21 +77,29 @@ pub struct RustNotes {
     pending_delete: Option<PathBuf>,
     show_prefs: bool,
     prefs_tab: PrefsTab,
+    registry: Registry,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PrefsTab {
     Appearance,
+    Extensions,
     Backup,
     About,
 }
 
 impl PrefsTab {
-    const ALL: [PrefsTab; 3] = [PrefsTab::Appearance, PrefsTab::Backup, PrefsTab::About];
+    const ALL: [PrefsTab; 4] = [
+        PrefsTab::Appearance,
+        PrefsTab::Extensions,
+        PrefsTab::Backup,
+        PrefsTab::About,
+    ];
 
     fn label(self) -> &'static str {
         match self {
             PrefsTab::Appearance => "Apariencia",
+            PrefsTab::Extensions => "Extensiones",
             PrefsTab::Backup => "Copia de seguridad",
             PrefsTab::About => "Acerca de",
         }
@@ -112,6 +122,7 @@ impl RustNotes {
             pending_delete: None,
             show_prefs: false,
             prefs_tab: PrefsTab::Appearance,
+            registry: Registry::builtin(),
         }
     }
 
@@ -309,16 +320,33 @@ impl RustNotes {
                         self.show_prefs = true;
                     }
 
-                    let mut theme = self.config.theme;
+                    // Indicador de estado de sincronización (guía §6).
+                    let state = self.registry.sync_by_id(&self.config.sync).state();
+                    let col = match &state {
+                        SyncState::Disabled => ui.visuals().weak_text_color(),
+                        SyncState::Synced => egui::Color32::from_rgb(76, 175, 92),
+                        SyncState::Syncing => ui.visuals().hyperlink_color,
+                        SyncState::Error(_) => egui::Color32::from_rgb(201, 74, 74),
+                    };
+                    ui.label(egui::RichText::new(state.glyph()).color(col))
+                        .on_hover_text(state.label());
+
+                    let mut sel = self.config.theme.clone();
                     egui::ComboBox::from_id_salt("theme")
-                        .selected_text(theme.label())
+                        .selected_text(self.registry.theme_name(&sel))
                         .show_ui(ui, |ui| {
-                            for opt in ThemeChoice::ALL {
-                                ui.selectable_value(&mut theme, opt, opt.label());
+                            ui.selectable_value(&mut sel, SYSTEM_ID.to_owned(), "Sistema");
+                            for t in self.registry.theme_entries() {
+                                ui.selectable_value(&mut sel, t.id.to_owned(), t.name);
                             }
+                            ui.selectable_value(
+                                &mut sel,
+                                CUSTOM_ID.to_owned(),
+                                "Personalizado",
+                            );
                         });
-                    if theme != self.config.theme {
-                        self.config.theme = theme;
+                    if sel != self.config.theme {
+                        self.config.theme = sel;
                         self.config.save();
                     }
 
@@ -624,6 +652,7 @@ impl RustNotes {
                 egui::CentralPanel::default().show_inside(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| match self.prefs_tab {
                         PrefsTab::Appearance => self.prefs_appearance(ui),
+                        PrefsTab::Extensions => self.prefs_extensions(ui),
                         PrefsTab::Backup => self.prefs_backup(ui),
                         PrefsTab::About => self.prefs_about(ui),
                     });
@@ -640,16 +669,22 @@ impl RustNotes {
 
         ui.label(egui::RichText::new("TEMA").small().weak());
         ui.add_space(6.0);
-        let mut theme = self.config.theme;
+        let mut sel = self.config.theme.clone();
         ui.horizontal_wrapped(|ui| {
-            for opt in ThemeChoice::ALL {
-                if ui.selectable_label(theme == opt, opt.label()).clicked() {
-                    theme = opt;
+            if ui.selectable_label(sel == SYSTEM_ID, "Sistema").clicked() {
+                sel = SYSTEM_ID.to_owned();
+            }
+            for t in self.registry.theme_entries() {
+                if ui.selectable_label(sel == t.id, t.name).clicked() {
+                    sel = t.id.to_owned();
                 }
             }
+            if ui.selectable_label(sel == CUSTOM_ID, "Personalizado").clicked() {
+                sel = CUSTOM_ID.to_owned();
+            }
         });
-        if theme != self.config.theme {
-            self.config.theme = theme;
+        if sel != self.config.theme {
+            self.config.theme = sel;
             self.config.save();
         }
 
@@ -685,11 +720,12 @@ impl RustNotes {
             .on_hover_text("Copia la paleta visible para retocarla")
             .clicked()
         {
-            self.config.custom_theme = self
-                .config
-                .theme
-                .palette(ui.ctx(), &self.config.custom_theme);
-            self.config.theme = ThemeChoice::Custom;
+            self.config.custom_theme = self.registry.resolve_theme(
+                &self.config.theme,
+                ui.ctx(),
+                &self.config.custom_theme,
+            );
+            self.config.theme = CUSTOM_ID.to_owned();
             self.config.save();
         }
 
@@ -709,7 +745,7 @@ impl RustNotes {
                 .changed();
         }
         if changed {
-            self.config.theme = ThemeChoice::Custom;
+            self.config.theme = CUSTOM_ID.to_owned();
             self.config.save();
         }
 
@@ -731,8 +767,13 @@ impl RustNotes {
     }
 
     fn export_theme(&mut self, ctx: &egui::Context) {
-        let palette = self.config.theme.palette(ctx, &self.config.custom_theme);
-        let suggested = format!("rustnotes-{}.json", self.config.theme.label().to_lowercase());
+        let palette =
+            self.registry
+                .resolve_theme(&self.config.theme, ctx, &self.config.custom_theme);
+        let suggested = format!(
+            "rustnotes-{}.json",
+            self.registry.theme_name(&self.config.theme).to_lowercase()
+        );
         let Some(path) = rfd::FileDialog::new()
             .set_file_name(suggested)
             .add_filter("Tema JSON", &["json"])
@@ -762,7 +803,7 @@ impl RustNotes {
         {
             Some(p) => {
                 self.config.custom_theme = p;
-                self.config.theme = ThemeChoice::Custom;
+                self.config.theme = CUSTOM_ID.to_owned();
                 self.config.save();
                 self.status = "Tema importado y aplicado".to_owned();
             }
@@ -838,6 +879,86 @@ impl RustNotes {
         ui.label(egui::RichText::new("Notas Markdown con espacios, carpetas y temas.").weak());
     }
 
+    fn prefs_extensions(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Extensiones");
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new(
+                "Se compilan en el binario. Añadir una es implementar su \
+                 trait y registrarla en el Registry.",
+            )
+            .small()
+            .weak(),
+        );
+        ui.add_space(12.0);
+
+        ui.label(egui::RichText::new("REGISTRADAS").small().weak());
+        ui.add_space(4.0);
+        for (kind, id, name, detail) in self.registry.listing() {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("[{}]", kind.label()))
+                        .small()
+                        .weak(),
+                );
+                ui.label(name);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new(detail).small().weak());
+                    ui.label(egui::RichText::new(id).small().weak());
+                });
+            });
+        }
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(12.0);
+
+        ui.label(egui::RichText::new("SINCRONIZACIÓN").small().weak());
+        ui.add_space(6.0);
+        let mut sel = self.config.sync.clone();
+        let providers: Vec<(&'static str, &'static str)> = self
+            .registry
+            .syncs()
+            .iter()
+            .map(|s| (s.id(), s.name()))
+            .collect();
+        ui.horizontal_wrapped(|ui| {
+            for (id, name) in providers {
+                if ui.selectable_label(sel == id, name).clicked() {
+                    sel = id.to_owned();
+                }
+            }
+        });
+        if sel != self.config.sync {
+            self.config.sync = sel;
+            self.config.save();
+        }
+
+        let state = self.registry.sync_by_id(&self.config.sync).state();
+        ui.add_space(6.0);
+        ui.label(format!("Estado: {}", state.label()));
+        ui.add_space(8.0);
+        let enabled = !matches!(state, SyncState::Disabled);
+        if ui
+            .add_enabled(enabled, egui::Button::new("Sincronizar ahora"))
+            .clicked()
+        {
+            self.status = match self.registry.sync_now(&self.config.sync) {
+                Ok(()) => "Sincronización completada".to_owned(),
+                Err(e) => format!("Error de sincronización: {e}"),
+            };
+        }
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new(
+                "La sincronización real (Git, S3, Drive) es backlog; la \
+                 interfaz ya admite añadir backends como extensión.",
+            )
+            .small()
+            .weak(),
+        );
+    }
+
     fn backup_now(&mut self, quiet: bool) {
         let Some(dest) = self.config.backup_dir.clone() else {
             if !quiet {
@@ -866,13 +987,15 @@ impl RustNotes {
 impl eframe::App for RustNotes {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if !self.style_installed {
+            theme::install_fonts(ui.ctx());
             theme::install_style(ui.ctx());
             self.style_installed = true;
         }
-        let palette = self
-            .config
-            .theme
-            .palette(ui.ctx(), &self.config.custom_theme);
+        let palette = self.registry.resolve_theme(
+            &self.config.theme,
+            ui.ctx(),
+            &self.config.custom_theme,
+        );
         theme::apply(ui.ctx(), &palette);
         if (ui.ctx().zoom_factor() - self.config.ui_scale).abs() > f32::EPSILON {
             ui.ctx().set_zoom_factor(self.config.ui_scale);

@@ -2,6 +2,28 @@
 
 Todos los cambios notables de RustNotes se documentan en este archivo.
 
+## [0.5.0] - 2026-05-16
+
+### Added
+
+- **Sistema de extensiones** *in-tree* (traits compilados en el binario):
+  los temas y la sincronización son extensiones. Nueva pestaña
+  **Extensiones** en Preferencias e indicador de estado de sincronización
+  en la barra superior. La sincronización es de momento interfaz + stub
+  (los backends reales —Git, S3, Drive— quedan como backlog).
+- **Fuentes** Inter (interfaz) y JetBrains Mono (editor) empotradas en el
+  binario, bajo licencia SIL Open Font License 1.1.
+- **Instalador de Windows** (`rustnotes-<versión>-windows-setup.exe`,
+  Inno Setup) además del ejecutable portable.
+
+### Changed
+
+- Guía de estilo aplicada: acento **naranja Rust `#ce412b`**, presets
+  Claro/Oscuro a los colores exactos de la guía, esquinas de 4px,
+  jerarquía tipográfica y bordes sutiles en inputs y botones secundarios.
+- El tema activo y el de sincronización se guardan como identificadores;
+  las configuraciones anteriores siguen siendo compatibles.
+
 ## [0.4.0] - 2026-05-16
 
 ### Added
@@ -95,6 +117,7 @@ Todos los cambios notables de RustNotes se documentan en este archivo.
   ejecutable e instalable y versión portable `.zip` (Windows).
 - Las actions de CI se ejecutan en Node 24 (Node 20 quedó obsoleto).
 
+[0.5.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.2...v0.2.0

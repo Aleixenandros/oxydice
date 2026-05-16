@@ -38,24 +38,27 @@ impl Default for Palette {
 
 // ---- presets ------------------------------------------------------------
 
+// Tema Claro «Technical Utility» — guía de estilo §2.2.
+// Documento blanco (#ffffff) sobre contenedores gris claro (#f2f4f6).
 pub const LIGHT: Palette = Palette {
     dark: false,
-    accent: [59, 111, 224],
-    bg: [255, 255, 255],
-    surface: [244, 245, 247],
-    text: [31, 36, 48],
-    muted: [110, 116, 128],
-    border: [225, 228, 234],
+    accent: [206, 65, 43],   // #ce412b naranja Rust
+    bg: [255, 255, 255],     // #ffffff superficie de documento/editor
+    surface: [242, 244, 246], // #f2f4f6 contenedores/paneles
+    text: [32, 33, 36],      // #202124
+    muted: [95, 99, 104],    // #5f6368
+    border: [218, 220, 224], // #dadce0
 };
 
+// Tema Oscuro «Developer-Centric» — guía de estilo §2.1.
 pub const DARK: Palette = Palette {
     dark: true,
-    accent: [108, 142, 239],
-    bg: [21, 23, 30],
-    surface: [28, 31, 39],
-    text: [215, 218, 224],
-    muted: [138, 143, 156],
-    border: [42, 46, 56],
+    accent: [206, 65, 43],   // #ce412b naranja Rust
+    bg: [19, 19, 19],        // #131313 fondo de superficie (editor)
+    surface: [30, 30, 30],   // #1e1e1e contenedores/paneles
+    text: [224, 224, 224],   // #e0e0e0
+    muted: [160, 160, 160],  // #a0a0a0
+    border: [57, 57, 57],    // #393939
 };
 
 pub const NORD: Palette = Palette {
@@ -88,59 +91,17 @@ pub const DRACULA: Palette = Palette {
     border: [68, 71, 90],
 };
 
-/// Tema seleccionado. Las variantes antiguas (`Light`, `Dark`, `System`) se
-/// conservan con el mismo nombre para que las configuraciones existentes
-/// sigan deserializándose sin perder los espacios del usuario.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum ThemeChoice {
-    Light,
-    Dark,
-    #[default]
-    System,
-    Nord,
-    Solarized,
-    Dracula,
-    Custom,
-}
+/// Identificadores especiales de tema (no son presets de paleta fija).
+/// Sus nombres coinciden con las variantes del enum antiguo para que las
+/// configuraciones existentes sigan cargando sin perder datos.
+pub const SYSTEM_ID: &str = "System";
+pub const CUSTOM_ID: &str = "Custom";
 
-impl ThemeChoice {
-    pub const ALL: [ThemeChoice; 7] = [
-        ThemeChoice::System,
-        ThemeChoice::Light,
-        ThemeChoice::Dark,
-        ThemeChoice::Nord,
-        ThemeChoice::Solarized,
-        ThemeChoice::Dracula,
-        ThemeChoice::Custom,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            ThemeChoice::Light => "Claro",
-            ThemeChoice::Dark => "Oscuro",
-            ThemeChoice::System => "Sistema",
-            ThemeChoice::Nord => "Nord",
-            ThemeChoice::Solarized => "Solarized",
-            ThemeChoice::Dracula => "Dracula",
-            ThemeChoice::Custom => "Personalizado",
-        }
-    }
-
-    /// Paleta efectiva del tema. `System` sigue al sistema operativo;
-    /// `Custom` usa la paleta editable que se le pase.
-    pub fn palette(self, ctx: &egui::Context, custom: &Palette) -> Palette {
-        match self {
-            ThemeChoice::Light => LIGHT,
-            ThemeChoice::Dark => DARK,
-            ThemeChoice::Nord => NORD,
-            ThemeChoice::Solarized => SOLARIZED,
-            ThemeChoice::Dracula => DRACULA,
-            ThemeChoice::Custom => *custom,
-            ThemeChoice::System => match ctx.system_theme() {
-                Some(egui::Theme::Light) => LIGHT,
-                _ => DARK,
-            },
-        }
+/// Paleta que sigue al tema del sistema operativo.
+pub fn system_palette(ctx: &egui::Context) -> Palette {
+    match ctx.system_theme() {
+        Some(egui::Theme::Light) => LIGHT,
+        _ => DARK,
     }
 }
 
@@ -181,7 +142,8 @@ pub fn apply(ctx: &egui::Context, p: &Palette) {
     v.panel_fill = c(p.surface);
     v.extreme_bg_color = c(p.bg); // fondo del editor de texto
     v.faint_bg_color = faint;
-    v.code_bg_color = mix(p.bg, p.text, 0.06);
+    // Bloques de código con fondo distinto al cuerpo (guía §4.2).
+    v.code_bg_color = mix(p.bg, p.text, if p.dark { 0.10 } else { 0.06 });
 
     v.hyperlink_color = accent;
     v.selection.bg_fill = egui::Color32::from_rgba_unmultiplied(
@@ -192,7 +154,8 @@ pub fn apply(ctx: &egui::Context, p: &Palette) {
     );
     v.selection.stroke = Stroke::new(1.0, accent);
 
-    let r = CornerRadius::same(8);
+    // Bordes ligeramente redondeados, 4px (guía §1).
+    let r = CornerRadius::same(4);
     v.window_corner_radius = r;
     v.menu_corner_radius = r;
     v.window_stroke = Stroke::new(1.0, border);
@@ -211,7 +174,8 @@ pub fn apply(ctx: &egui::Context, p: &Palette) {
     // Botones y controles en reposo: planos, sin relieve.
     w.inactive.bg_fill = mix(p.surface, p.text, if p.dark { 0.08 } else { 0.05 });
     w.inactive.weak_bg_fill = mix(p.surface, p.text, if p.dark { 0.06 } else { 0.04 });
-    w.inactive.bg_stroke = Stroke::NONE;
+    // Inputs y botones secundarios con borde sutil de 1px (guía §4.3).
+    w.inactive.bg_stroke = Stroke::new(1.0, border);
     w.inactive.fg_stroke = Stroke::new(1.0, text);
     w.inactive.corner_radius = r;
 
@@ -260,25 +224,82 @@ pub fn contrast_on(bg: egui::Color32) -> egui::Color32 {
     }
 }
 
+/// Empotra las fuentes de la guía de estilo §3 (Inter, Inter SemiBold y
+/// JetBrains Mono), conservando las fuentes por defecto de egui como
+/// respaldo para los glifos de iconos. Llamar una vez, antes del estilo.
+pub fn install_fonts(ctx: &egui::Context) {
+    use egui::{FontData, FontDefinitions, FontFamily};
+    use std::sync::Arc;
+
+    let mut fonts = FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "Inter".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/fonts/Inter-Regular.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "InterSemiBold".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/fonts/Inter-SemiBold.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "JetBrainsMono".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/fonts/JetBrainsMono-Regular.ttf"
+        ))),
+    );
+
+    // Inter/JetBrains Mono primero; las fuentes de egui quedan detrás como
+    // respaldo para símbolos e iconos que Inter no cubre.
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, "Inter".to_owned());
+    fonts
+        .families
+        .entry(FontFamily::Monospace)
+        .or_default()
+        .insert(0, "JetBrainsMono".to_owned());
+
+    // Familia con nombre para encabezados (semibold) + respaldo proporcional.
+    let mut heading = vec!["InterSemiBold".to_owned()];
+    if let Some(prop) = fonts.families.get(&FontFamily::Proportional) {
+        heading.extend(prop.iter().cloned());
+    }
+    fonts
+        .families
+        .insert(FontFamily::Name("Heading".into()), heading);
+
+    ctx.set_fonts(fonts);
+}
+
 /// Instala tipografía y espaciado (no depende del tema). Llamar una vez.
 pub fn install_style(ctx: &egui::Context) {
     use egui::{FontFamily, FontId, Margin, TextStyle};
 
     ctx.all_styles_mut(|style| {
+        // Jerarquía tipográfica (guía §3): Inter (UI), Inter SemiBold
+        // (encabezados), JetBrains Mono (editor).
+        let heading = FontFamily::Name("Heading".into());
         style.text_styles = [
-            (TextStyle::Heading, FontId::new(22.0, FontFamily::Proportional)),
-            (TextStyle::Body, FontId::new(14.5, FontFamily::Proportional)),
+            (TextStyle::Heading, FontId::new(24.0, heading.clone())),
+            (TextStyle::Body, FontId::new(15.0, FontFamily::Proportional)),
             (TextStyle::Button, FontId::new(14.0, FontFamily::Proportional)),
-            (TextStyle::Monospace, FontId::new(13.5, FontFamily::Monospace)),
-            (TextStyle::Small, FontId::new(11.5, FontFamily::Proportional)),
+            (TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace)),
+            (TextStyle::Small, FontId::new(12.5, FontFamily::Proportional)),
         ]
         .into();
 
         let s = &mut style.spacing;
-        s.item_spacing = egui::vec2(8.0, 8.0);
-        s.button_padding = egui::vec2(12.0, 7.0);
-        s.window_margin = Margin::same(16);
-        s.menu_margin = Margin::same(8);
+        // Densidad de información media-alta en escritorio (guía §1).
+        s.item_spacing = egui::vec2(7.0, 7.0);
+        s.button_padding = egui::vec2(10.0, 6.0);
+        s.window_margin = Margin::same(14);
+        s.menu_margin = Margin::same(6);
         s.indent = 18.0;
         s.scroll = egui::style::ScrollStyle::thin();
     });
