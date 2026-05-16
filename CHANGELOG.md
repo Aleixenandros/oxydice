@@ -2,14 +2,20 @@
 
 Todos los cambios notables de RustNotes se documentan en este archivo.
 
-El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/)
-y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
+## [0.3.0] - 2026-05-16
 
-## [Unreleased]
+### Added
+
+- **Preferencias** accesibles desde la barra superior (⚙), con secciones:
+  - **Apariencia**: tema (claro/oscuro/sistema) y escala de la interfaz.
+  - **Copia de seguridad**: carpeta destino, copia manual y copia automática
+    tras cada guardado (omite archivos ocultos).
+  - **Acerca de**: versión, autor, licencia y enlace al repositorio.
 
 ## [0.2.0] - 2026-05-16
 
 ### Added
+
 - **Espacios**: registra varias carpetas como espacios y cámbialos desde un
   selector en la barra lateral; el espacio activo se recuerda entre sesiones.
 - **Árbol de carpetas y notas** por espacio, con crear nota y crear carpeta
@@ -18,37 +24,44 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
 - Barra superior con breadcrumb (espacio / nota) y barra lateral ocultable.
 
 ### Changed
+
 - Interfaz rediseñada al estilo Obsidian (barra lateral + editor + vista
   previa), con un aspecto limpio y moderno.
 
 ### Removed
+
 - Workflow de integración continua (`ci.yml`): la automatización se ejecuta
   únicamente al publicar una versión (tag `v*`).
 
 ## [0.1.2] - 2026-05-16
 
 ### Changed
+
 - macOS se distribuye como `.dmg` con un bundle `RustNotes.app` (Info.plist
   e icono), en lugar de un binario suelto en `.tar.gz`.
 
 ## [0.1.1] - 2026-05-16
 
 ### Added
+
 - Paquete **AppImage** para Linux (portable, cualquier distribución).
 - Entrada de menú (`.desktop`) e icono en los paquetes `.deb` y `.rpm`:
   RustNotes aparece en el menú de aplicaciones tras instalarlo.
 
 ### Changed
+
 - Los archivos publicados incluyen la versión (tomada del tag) en el nombre.
 - La versión portable de Windows es ahora un `.exe` directo (antes un `.zip`).
 
 ### Removed
+
 - Ya no se publica el binario Linux suelto sin extensión (lo sustituye el
   AppImage).
 
 ## [0.1.0] - 2026-05-15
 
 ### Added
+
 - Versión mínima viable de la aplicación de escritorio (egui/eframe).
 - Abrir una carpeta como *vault* y listar recursivamente las notas `.md`.
 - Editor de texto Markdown con guardado a disco.
@@ -60,7 +73,7 @@ y el proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   ejecutable e instalable y versión portable `.zip` (Windows).
 - Las actions de CI se ejecutan en Node 24 (Node 20 quedó obsoleto).
 
-[Unreleased]: https://github.com/Aleixenandros/RustNotes/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Aleixenandros/RustNotes/compare/v0.1.0...v0.1.1

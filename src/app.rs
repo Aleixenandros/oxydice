@@ -45,6 +45,27 @@ pub struct RustNotes {
     show_preview: bool,
     style_installed: bool,
     dialog: Option<Dialog>,
+    show_prefs: bool,
+    prefs_tab: PrefsTab,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PrefsTab {
+    Appearance,
+    Backup,
+    About,
+}
+
+impl PrefsTab {
+    const ALL: [PrefsTab; 3] = [PrefsTab::Appearance, PrefsTab::Backup, PrefsTab::About];
+
+    fn label(self) -> &'static str {
+        match self {
+            PrefsTab::Appearance => "Apariencia",
+            PrefsTab::Backup => "Copia de seguridad",
+            PrefsTab::About => "Acerca de",
+        }
+    }
 }
 
 impl RustNotes {
@@ -60,6 +81,8 @@ impl RustNotes {
             show_preview: true,
             style_installed: false,
             dialog: None,
+            show_prefs: false,
+            prefs_tab: PrefsTab::Appearance,
         }
     }
 
@@ -78,14 +101,18 @@ impl RustNotes {
     }
 
     fn save(&mut self) {
-        if let Some(path) = &self.current {
-            match std::fs::write(path, &self.buffer) {
-                Ok(()) => {
-                    self.dirty = false;
-                    self.status = "Guardado".to_owned();
+        let Some(path) = self.current.clone() else {
+            return;
+        };
+        match std::fs::write(&path, &self.buffer) {
+            Ok(()) => {
+                self.dirty = false;
+                self.status = "Guardado".to_owned();
+                if self.config.backup_on_save {
+                    self.backup_now(true);
                 }
-                Err(e) => self.status = format!("Error al guardar: {e}"),
             }
+            Err(e) => self.status = format!("Error al guardar: {e}"),
         }
     }
 
@@ -188,6 +215,10 @@ impl RustNotes {
                 ui.label(egui::RichText::new(crumb).weak());
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("⚙").on_hover_text("Preferencias").clicked() {
+                        self.show_prefs = true;
+                    }
+
                     let mut theme = self.config.theme;
                     egui::ComboBox::from_id_salt("theme")
                         .selected_text(theme.label())
@@ -407,6 +438,162 @@ impl RustNotes {
             self.dialog = Some(dialog);
         }
     }
+
+    // ---- preferencias ---------------------------------------------------
+
+    fn preferences_window(&mut self, ui: &mut egui::Ui) {
+        if !self.show_prefs {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Preferencias")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_size([580.0, 420.0])
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+                egui::Panel::left("prefs_nav")
+                    .resizable(false)
+                    .default_size(170.0)
+                    .show_inside(ui, |ui| {
+                        ui.add_space(4.0);
+                        for tab in PrefsTab::ALL {
+                            ui.selectable_value(&mut self.prefs_tab, tab, tab.label());
+                        }
+                    });
+                egui::CentralPanel::default().show_inside(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| match self.prefs_tab {
+                        PrefsTab::Appearance => self.prefs_appearance(ui),
+                        PrefsTab::Backup => self.prefs_backup(ui),
+                        PrefsTab::About => self.prefs_about(ui),
+                    });
+                });
+            });
+        if !open {
+            self.show_prefs = false;
+        }
+    }
+
+    fn prefs_appearance(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Apariencia");
+        ui.add_space(8.0);
+
+        ui.label("Tema");
+        let mut theme = self.config.theme;
+        ui.horizontal(|ui| {
+            for opt in ThemeChoice::ALL {
+                ui.selectable_value(&mut theme, opt, opt.label());
+            }
+        });
+        if theme != self.config.theme {
+            self.config.theme = theme;
+            self.config.save();
+        }
+
+        ui.add_space(14.0);
+        ui.label("Escala de la interfaz");
+        let mut scale = self.config.ui_scale;
+        if ui
+            .add(egui::Slider::new(&mut scale, 0.8..=1.6).step_by(0.05))
+            .changed()
+        {
+            self.config.ui_scale = scale;
+            self.config.save();
+        }
+    }
+
+    fn prefs_backup(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Copia de seguridad");
+        ui.add_space(8.0);
+
+        let dest = self
+            .config
+            .backup_dir
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "(sin configurar)".to_owned());
+        ui.label(format!("Carpeta de copias: {dest}"));
+        ui.horizontal(|ui| {
+            if ui.button("Elegir carpeta…").clicked() {
+                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                    self.config.backup_dir = Some(dir);
+                    self.config.save();
+                }
+            }
+            if self.config.backup_dir.is_some() && ui.button("Quitar").clicked() {
+                self.config.backup_dir = None;
+                self.config.save();
+            }
+        });
+
+        ui.add_space(8.0);
+        let mut on_save = self.config.backup_on_save;
+        if ui
+            .checkbox(&mut on_save, "Hacer una copia tras cada guardado")
+            .changed()
+        {
+            self.config.backup_on_save = on_save;
+            self.config.save();
+        }
+
+        ui.add_space(14.0);
+        let ready = self.config.backup_dir.is_some() && self.config.selected_space().is_some();
+        if ui
+            .add_enabled(ready, egui::Button::new("Crear copia ahora"))
+            .clicked()
+        {
+            self.backup_now(false);
+        }
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new(
+                "Copia el espacio activo (omitiendo archivos ocultos) a una \
+                 subcarpeta con marca de tiempo.",
+            )
+            .small()
+            .weak(),
+        );
+    }
+
+    fn prefs_about(&mut self, ui: &mut egui::Ui) {
+        ui.heading("RustNotes");
+        ui.add_space(8.0);
+        ui.label(format!("Versión {}", env!("CARGO_PKG_VERSION")));
+        ui.label(format!("Autor: {}", env!("CARGO_PKG_AUTHORS")));
+        ui.label("Licencia: MIT");
+        ui.add_space(8.0);
+        ui.hyperlink_to(
+            "Repositorio en GitHub",
+            "https://github.com/Aleixenandros/RustNotes",
+        );
+        ui.add_space(8.0);
+        ui.label(egui::RichText::new("Notas Markdown con espacios, carpetas y temas.").weak());
+    }
+
+    fn backup_now(&mut self, quiet: bool) {
+        let Some(dest) = self.config.backup_dir.clone() else {
+            if !quiet {
+                self.status = "Configura una carpeta de copias en Preferencias".to_owned();
+            }
+            return;
+        };
+        let Some(space) = self.config.selected_space().cloned() else {
+            if !quiet {
+                self.status = "No hay espacio activo".to_owned();
+            }
+            return;
+        };
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let target = dest.join(format!("rustnotes-{}-{secs}", file_name(&space)));
+        match copy_dir(&space, &target) {
+            Ok(()) => self.status = format!("Copia creada: {}", target.display()),
+            Err(e) => self.status = format!("Error en la copia: {e}"),
+        }
+    }
 }
 
 impl eframe::App for RustNotes {
@@ -416,6 +603,9 @@ impl eframe::App for RustNotes {
             self.style_installed = true;
         }
         theme::apply(ui.ctx(), self.config.theme);
+        if (ui.ctx().zoom_factor() - self.config.ui_scale).abs() > f32::EPSILON {
+            ui.ctx().set_zoom_factor(self.config.ui_scale);
+        }
 
         self.top_bar(ui);
 
@@ -434,6 +624,7 @@ impl eframe::App for RustNotes {
         egui::CentralPanel::default().show_inside(ui, |ui| self.center(ui));
 
         self.dialog_window(ui);
+        self.preferences_window(ui);
     }
 }
 
@@ -466,4 +657,24 @@ fn entries(dir: &Path) -> Vec<PathBuf> {
         .collect();
     v.sort_by(|a, b| (!a.is_dir(), a.file_name()).cmp(&(!b.is_dir(), b.file_name())));
     v
+}
+
+/// Copia recursivamente `src` en `dst`, omitiendo archivos ocultos.
+fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if from.is_dir() {
+            copy_dir(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
 }

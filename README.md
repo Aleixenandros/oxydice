@@ -12,6 +12,7 @@ multiplataforma (Linux, macOS y Windows).
   con clic derecho sobre una carpeta).
 - Editor Markdown con guardado a disco y **vista previa en vivo**.
 - **Temas**: claro, oscuro y sistema; la preferencia se guarda.
+- **Preferencias** (⚙): apariencia y escala, copia de seguridad y "acerca de".
 - Interfaz limpia y moderna al estilo Obsidian.
 - Los datos son archivos de texto plano: siempre legibles fuera de la app.
 

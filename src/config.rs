@@ -4,7 +4,7 @@ use crate::theme::ThemeChoice;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// Carpetas raíz registradas como espacios.
@@ -12,6 +12,25 @@ pub struct Config {
     /// Índice del espacio activo dentro de `spaces`.
     pub selected: Option<usize>,
     pub theme: ThemeChoice,
+    /// Escala de la interfaz (1.0 = normal).
+    pub ui_scale: f32,
+    /// Carpeta destino de las copias de seguridad.
+    pub backup_dir: Option<PathBuf>,
+    /// Hacer una copia del espacio activo tras cada guardado.
+    pub backup_on_save: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            spaces: Vec::new(),
+            selected: None,
+            theme: ThemeChoice::default(),
+            ui_scale: 1.0,
+            backup_dir: None,
+            backup_on_save: false,
+        }
+    }
 }
 
 impl Config {
