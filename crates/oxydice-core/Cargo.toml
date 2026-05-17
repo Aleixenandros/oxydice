@@ -1,0 +1,18 @@
+[package]
+name = "oxydice-core"
+description = "Oxydice core — lógica agnóstica de UI: documento, búsqueda, configuración, temas, render y vault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+directories = "6"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+ammonia = "4"
+sha2 = "0.10"
+opendal = { version = "0.56", features = ["services-s3", "services-webdav"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time"] }

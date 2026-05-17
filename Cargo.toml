@@ -1,40 +1,20 @@
-[package]
-name = "rustnotes"
-version = "0.6.0"
-edition = "2021"
-description = "RustNotes — aplicación nativa para crear y leer notas Markdown"
-license = "MIT"
-authors = ["Aleixenandros"]
-repository = "https://github.com/Aleixenandros/RustNotes"
+[workspace]
+resolver = "2"
+members = ["crates/oxydice-core", "apps/oxydice/src-tauri"]
 
-[dependencies]
-eframe = "0.34"
-egui_commonmark = "0.23"
-rfd = "0.17"
+[workspace.package]
+version = "0.7.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Aleixenandros"]
+repository = "https://github.com/Aleixenandros/oxydice"
+
+[workspace.dependencies]
+oxydice-core = { path = "crates/oxydice-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-directories = "6"
 
 [profile.release]
 strip = true
 lto = true
 codegen-units = 1
-
-# --- Empaquetado .deb (cargo-deb) ---
-[package.metadata.deb]
-maintainer = "Aleixenandros"
-section = "utils"
-priority = "optional"
-assets = [
-    ["target/release/rustnotes", "usr/bin/", "755"],
-    ["packaging/rustnotes.desktop", "usr/share/applications/", "644"],
-    ["packaging/rustnotes.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
-]
-
-# --- Empaquetado .rpm (cargo-generate-rpm) ---
-[package.metadata.generate-rpm]
-assets = [
-    { source = "target/release/rustnotes", dest = "/usr/bin/rustnotes", mode = "755" },
-    { source = "packaging/rustnotes.desktop", dest = "/usr/share/applications/rustnotes.desktop", mode = "644" },
-    { source = "packaging/rustnotes.svg", dest = "/usr/share/icons/hicolor/scalable/apps/rustnotes.svg", mode = "644" },
-]

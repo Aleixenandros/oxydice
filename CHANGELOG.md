@@ -1,6 +1,55 @@
 # Changelog
 
-Todos los cambios notables de RustNotes se documentan en este archivo.
+Todos los cambios notables de Oxydice (antes RustNotes) se documentan en
+este archivo.
+
+## [0.7.0] - 2026-05-17
+
+### Changed
+
+- **Renombrado a Oxydice** y **migración de egui a Tauri 2 + Svelte 5 +
+  CodeMirror 6**. Workspace Cargo: `crates/oxydice-core` (lógica agnóstica
+  de UI, con tests) + `apps/oxydice` (capa Tauri + frontend SvelteKit SPA).
+  El frontend reproduce fielmente la UI egui anterior.
+- **Render Markdown en el core** (`pulldown-cmark`), HTML **saneado** con
+  `ammonia`: única fuente de verdad de la vista previa, sin XSS.
+- **Tema → variables CSS** resueltas en el core; el frontend solo las fija
+  en `:root`. Ningún color codificado en la UI.
+- **Licencia cambiada de MIT a Apache-2.0** (`LICENSE`, manifiestos, UI).
+- Editor sobre **CodeMirror 6** (Markdown + lenguajes anidados Lezer),
+  números de línea, autoguardado y salto a línea desde esquema/búsqueda.
+- Release con **`tauri-action`** (matriz Linux/macOS/Windows); el bundler
+  de Tauri genera `.deb`/`.rpm`/AppImage/`.dmg`/instalador. Se elimina el
+  empaquetado manual de la era egui.
+- Tooling al día: Vite 8, vite-plugin-svelte 7, TypeScript 6.
+
+### Added
+
+- **Sincronización (motor + transporte)**: índice *sidecar*
+  `.oxydice/sync.json` (hash base + versión remota), reconciliación a
+  **3 bandas** (base/local/remoto), **conflicto = bifurcación
+  determinista** (sin pérdida de datos), **escrituras atómicas**
+  (temp+rename). Backend **OpenDAL** para **WebDAV y S3** con claves del
+  usuario; secretos en el **llavero del SO** (`keyring`). Comandos Tauri,
+  estado `SyncState` en la barra superior y *worker* (intervalo + foco).
+- **Internacionalización (T1)**: ES/EN/DE/PT, detección del idioma del SO,
+  selector en Ajustes › Apariencia, preferencia persistida; toda la UI con
+  cadenas externalizadas (cambio de idioma en caliente).
+- **Frontmatter de escritura (T6)**: editor de metadatos con *round-trip*
+  que preserva claves desconocidas y cuerpo; **filtro por etiqueta** en el
+  explorador.
+- **Visor de código (T17)**: además de `.md`, abre y muestra resaltados
+  (solo lectura, lenguaje por extensión vía Lezer) archivos html/css/php/
+  js/ts/rs/py/json/yaml/toml… El explorador los lista.
+- **Exportador (T18)**: exportar la nota a **HTML autónomo** (cuerpo
+  saneado + tema embebido, lo construye el core) y a **PDF** vía impresión
+  del *webview* (sin dependencias).
+- **Pasada de diseño (D1)**: foco accesible (`:focus-visible` de acento),
+  transiciones sutiles, estados hover/active/disabled, jerarquía
+  tipográfica, ritmo de espaciado, profundidad de tarjetas, soporte de
+  *prefers-reduced-motion*. Todo derivado de las variables del tema.
+- `docs/`: guía de creación de extensiones (`extensiones.md`) + plantilla
+  (`plantilla-extension.rs`).
 
 ## [0.6.0] - 2026-05-16
 

@@ -1,0 +1,30 @@
+[package]
+name = "oxydice"
+description = "Oxydice — notas Markdown con espacios, temas y sincronización"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+# El sufijo `_lib` evita el choque de nombres lib/bin en Windows
+# (ver https://github.com/rust-lang/cargo/issues/8519).
+name = "oxydice_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+oxydice-core = { workspace = true }
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+# keyring 3.x: API `Entry` estable y backends por feature (Secret Service en
+# Linux —persistente—, nativo en macOS/Windows). La 4.0 reorganizó toda la
+# API y es muy reciente; para una dependencia de credenciales se prefiere el
+# major estable y documentado.
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }

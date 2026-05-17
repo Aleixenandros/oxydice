@@ -1,0 +1,38 @@
+{
+  "name": "oxydice",
+  "version": "0.7.0",
+  "description": "Oxydice — notas Markdown con espacios, temas y sincronización",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "tauri": "tauri"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.10.8",
+    "@codemirror/language-data": "^6.5.1",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.36.1",
+    "@lezer/highlight": "^1.2.1",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-opener": "^2"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.60.1",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^25.8.0",
+    "svelte": "^5.55.7",
+    "svelte-check": "^4.4.8",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.13"
+  }
+}

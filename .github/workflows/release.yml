@@ -10,167 +10,54 @@ permissions:
   contents: write
 
 jobs:
-  # Calcula la versión a partir del tag (v0.1.0 -> 0.1.0).
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.v.outputs.version }}
-    steps:
-      - id: v
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-  # ---------- Linux: .deb + .rpm + AppImage ----------
-  linux:
-    needs: version
-    runs-on: ubuntu-latest
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
-      APPIMAGE_EXTRACT_AND_RUN: "1"
+  # Compila y empaqueta con el bundler de Tauri en cada plataforma y publica
+  # un GitHub Release (borrador) con los artefactos al sacar un tag `v*`.
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Instalar dependencias del sistema
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Rust estable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Dependencias del sistema (solo Linux)
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev \
-            libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            patchelf libayatana-appindicator3-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Dependencias del frontend
+        run: npm ci
+        working-directory: apps/oxydice
 
-      - name: Compilar
-        run: cargo build --release --locked
-
-      - name: Instalar empaquetadores
-        run: |
-          cargo install cargo-deb --locked
-          cargo install cargo-generate-rpm --locked
-
-      - name: Generar .deb y .rpm
-        run: |
-          cargo deb --no-build --output "rustnotes-${VERSION}-amd64.deb"
-          cargo generate-rpm --output "rustnotes-${VERSION}-x86_64.rpm"
-
-      - name: Construir AppImage
+      - uses: tauri-apps/tauri-action@v0
         env:
-          OUTPUT: rustnotes-${{ needs.version.outputs.version }}-x86_64.AppImage
-        run: |
-          set -euo pipefail
-          curl -fL -o linuxdeploy.AppImage \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy.AppImage
-          ./linuxdeploy.AppImage --appimage-extract-and-run \
-            --appdir AppDir \
-            --executable target/release/rustnotes \
-            --desktop-file packaging/rustnotes.desktop \
-            --icon-file packaging/rustnotes.svg \
-            --output appimage
-
-      - uses: actions/upload-artifact@v5
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: rustnotes-linux
-          path: |
-            rustnotes-${{ needs.version.outputs.version }}-amd64.deb
-            rustnotes-${{ needs.version.outputs.version }}-x86_64.rpm
-            rustnotes-${{ needs.version.outputs.version }}-x86_64.AppImage
-
-  # ---------- macOS: RustNotes.app dentro de .dmg ----------
-  macos:
-    needs: version
-    runs-on: macos-latest
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Compilar
-        run: cargo build --release --locked
-
-      - name: Generar icono .icns
-        run: |
-          set -euo pipefail
-          brew install librsvg
-          mkdir -p icon.iconset
-          for s in 16 32 128 256 512; do
-            rsvg-convert -w "$s" -h "$s" packaging/rustnotes.svg \
-              -o "icon.iconset/icon_${s}x${s}.png"
-            d=$((s * 2))
-            rsvg-convert -w "$d" -h "$d" packaging/rustnotes.svg \
-              -o "icon.iconset/icon_${s}x${s}@2x.png"
-          done
-          iconutil -c icns icon.iconset -o rustnotes.icns
-
-      - name: Crear RustNotes.app
-        run: |
-          set -euo pipefail
-          APP="RustNotes.app"
-          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp target/release/rustnotes "$APP/Contents/MacOS/rustnotes"
-          chmod +x "$APP/Contents/MacOS/rustnotes"
-          cp rustnotes.icns "$APP/Contents/Resources/rustnotes.icns"
-          sed "s/__VERSION__/${VERSION}/g" packaging/Info.plist \
-            > "$APP/Contents/Info.plist"
-          printf 'APPL????' > "$APP/Contents/PkgInfo"
-
-      - name: Crear .dmg
-        run: |
-          set -euo pipefail
-          mkdir dmg
-          cp -R RustNotes.app dmg/
-          ln -s /Applications dmg/Applications
-          hdiutil create -volname RustNotes -srcfolder dmg -ov \
-            -format UDZO "rustnotes-${VERSION}-macos.dmg"
-
-      - uses: actions/upload-artifact@v5
-        with:
-          name: rustnotes-macos
-          path: rustnotes-${{ needs.version.outputs.version }}-macos.dmg
-
-  # ---------- Windows: .exe portable ----------
-  windows:
-    needs: version
-    runs-on: windows-latest
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Compilar
-        run: cargo build --release --locked
-
-      - name: Renombrar ejecutable portable
-        shell: pwsh
-        run: Copy-Item target/release/rustnotes.exe "rustnotes-${env:VERSION}-windows-portable.exe"
-
-      - name: Instalar Inno Setup
-        run: choco install innosetup --no-progress -y
-
-      - name: Construir instalador
-        shell: pwsh
-        run: >
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          /DMyAppVersion=$env:VERSION packaging\rustnotes.iss
-
-      - uses: actions/upload-artifact@v5
-        with:
-          name: rustnotes-windows
-          path: |
-            rustnotes-${{ needs.version.outputs.version }}-windows-portable.exe
-            rustnotes-${{ needs.version.outputs.version }}-windows-setup.exe
-
-  # ---------- Publicar el Release con todos los artefactos ----------
-  release:
-    needs: [linux, macos, windows]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v5
-        with:
-          path: artifacts
-
-      - name: Publicar GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*
+          projectPath: apps/oxydice
+          tagName: ${{ github.ref_name }}
+          releaseName: "Oxydice ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
