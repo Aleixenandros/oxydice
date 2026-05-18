@@ -37,7 +37,10 @@ fn save_config(config: Config) {
 
 #[tauri::command]
 fn list_dir(path: String) -> Vec<vault::Entry> {
-    vault::entries(Path::new(&path))
+    // El visor de código (T17) puede estar desactivado (T21): si lo está,
+    // solo se listan `.md`.
+    let code = Config::load().ext_enabled("code-viewer");
+    vault::entries_filtered(Path::new(&path), code)
 }
 
 #[tauri::command]
@@ -142,7 +145,57 @@ fn resolve_theme(id: String, system_dark: bool, custom: Palette) -> ResolvedThem
 
 #[tauri::command]
 fn extensions_listing() -> Vec<ExtRow> {
-    Registry::builtin().listing()
+    Registry::builtin().listing(&Config::load().disabled_ext)
+}
+
+/// Comprueba si hay una versión más reciente publicada en GitHub (T23).
+/// Solo *comprueba*; el frontend abre la web de releases si `newer`.
+#[derive(Serialize)]
+struct UpdateInfo {
+    current: String,
+    latest: String,
+    newer: bool,
+    url: String,
+}
+
+fn parse_semver(v: &str) -> (u64, u64, u64) {
+    let v = v.trim().trim_start_matches('v');
+    let mut it = v.split(['.', '-', '+']).map(|p| p.parse::<u64>().unwrap_or(0));
+    (
+        it.next().unwrap_or(0),
+        it.next().unwrap_or(0),
+        it.next().unwrap_or(0),
+    )
+}
+
+#[tauri::command]
+fn check_update() -> Result<UpdateInfo, String> {
+    let current = env!("CARGO_PKG_VERSION").to_owned();
+    let releases = "https://github.com/Aleixenandros/oxydice/releases";
+    let body = ureq::get(
+        "https://api.github.com/repos/Aleixenandros/oxydice/releases/latest",
+    )
+    .set("User-Agent", "oxydice")
+    .set("Accept", "application/vnd.github+json")
+    .call()
+    .map_err(|e| format!("No se pudo comprobar: {e}"))?
+    .into_string()
+    .map_err(|e| format!("Respuesta no válida: {e}"))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("JSON no válido: {e}"))?;
+    let latest = json
+        .get("tag_name")
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_owned();
+    let newer = !latest.is_empty()
+        && parse_semver(&latest) > parse_semver(&current);
+    Ok(UpdateInfo {
+        current,
+        latest,
+        newer,
+        url: releases.to_owned(),
+    })
 }
 
 #[tauri::command]
@@ -161,6 +214,12 @@ fn export_html(
 ) -> Result<(), String> {
     let html = oxydice_core::export::html_with_palette(&markdown, &title, &palette);
     std::fs::write(&path, html).map_err(|e| format!("Error al exportar: {e}"))
+}
+
+/// Exporta a Markdown (T26): escribe el contenido tal cual en `path`.
+#[tauri::command]
+fn export_md(path: String, markdown: String) -> Result<(), String> {
+    std::fs::write(&path, markdown).map_err(|e| format!("Error al exportar: {e}"))
 }
 
 #[tauri::command]
@@ -359,7 +418,9 @@ pub fn run() {
             sync_get_state,
             sync_set_secret,
             sync_clear_secret,
+            check_update,
             export_html,
+            export_md,
             export_theme,
             import_theme
         ])

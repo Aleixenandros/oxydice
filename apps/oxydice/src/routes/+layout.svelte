@@ -63,9 +63,16 @@
     color: var(--text);
     background: var(--surface);
     -webkit-font-smoothing: antialiased;
+    /* El webview a veces no permite seleccionar texto: habilitarlo de forma
+       explícita (copiar tokens/notas es esencial). */
+    -webkit-user-select: text;
+    user-select: text;
   }
+  /* El cromo (botones, navegación, rail) no necesita selección. */
   :global(button) {
     font-family: inherit;
+    -webkit-user-select: none;
+    user-select: none;
   }
   :global(::-webkit-scrollbar) {
     width: 10px;

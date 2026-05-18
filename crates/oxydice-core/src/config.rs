@@ -83,6 +83,9 @@ pub struct Config {
     pub editor_font: EditorFont,
     /// Tamaño de fuente del editor en puntos.
     pub editor_font_size: f32,
+    /// Familia tipográfica del sistema para el editor (T25). Vacío = usar la
+    /// fuente empotrada según `editor_font` (Mono/Sans).
+    pub editor_font_family: String,
     /// Escala de la interfaz (1.0 = normal).
     pub ui_scale: f32,
     /// Idioma de la UI: `""` = seguir al sistema; o `es`/`en`/`de`/`pt`.
@@ -91,6 +94,21 @@ pub struct Config {
     pub backup_dir: Option<PathBuf>,
     /// Hacer una copia del espacio activo tras cada guardado.
     pub backup_on_save: bool,
+    /// Ids de módulos/extensiones **desactivados** (T21). Un id ausente =
+    /// habilitado; presente = el módulo no se ofrece ni actúa.
+    pub disabled_ext: Vec<String>,
+    /// Rutas de las notas con pestaña abierta, en orden. Se restauran al
+    /// arrancar; las que ya no existan en disco se ignoran sin error.
+    pub open_tabs: Vec<PathBuf>,
+    /// Índice de la pestaña activa dentro de `open_tabs`.
+    pub active_tab: usize,
+}
+
+impl Config {
+    /// `true` si el módulo/extensión con ese id está habilitado.
+    pub fn ext_enabled(&self, id: &str) -> bool {
+        !self.disabled_ext.iter().any(|d| d == id)
+    }
 }
 
 impl Default for Config {
@@ -104,10 +122,14 @@ impl Default for Config {
             remote: RemoteSettings::default(),
             editor_font: EditorFont::Mono,
             editor_font_size: 14.0,
+            editor_font_family: String::new(),
             ui_scale: 1.0,
             lang: String::new(),
             backup_dir: None,
             backup_on_save: false,
+            disabled_ext: Vec::new(),
+            open_tabs: Vec::new(),
+            active_tab: 0,
         }
     }
 }

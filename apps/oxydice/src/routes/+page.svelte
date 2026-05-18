@@ -6,6 +6,7 @@
   // vive en `oxydice-core`; aquí solo estado de UI y orquestación.
   import { onMount, tick } from "svelte";
   import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { listen } from "@tauri-apps/api/event";
   import Tree from "$lib/Tree.svelte";
   import Editor from "$lib/Editor.svelte";
@@ -33,10 +34,10 @@
 
   const AUTOSAVE_MS = 600;
   const SEARCH_DEBOUNCE_MS = 220;
-  const VERSION = "0.7.0";
+  const VERSION = "0.8.0";
 
   type View = "explorer" | "search" | "settings";
-  type DocMode = "edit" | "read";
+  type DocMode = "edit" | "read" | "split";
   type LogLevel = "info" | "warn" | "error";
 
   let config = $state<Config | null>(null);
@@ -48,6 +49,18 @@
   let docMode = $state<DocMode>("edit");
   let showSidebar = $state(true);
   let showOutline = $state(true);
+
+  // Pestañas: una por nota abierta. `tabs` es la verdad (ruta + contenido +
+  // sucio + mtime); `current/buffer/dirty/mtime` son el espejo vivo de la
+  // pestaña activa para no reescribir toda la lógica de documento.
+  interface Tab {
+    path: string;
+    content: string;
+    dirty: boolean;
+    mtime: number | null;
+  }
+  let tabs = $state<Tab[]>([]);
+  let activeIdx = $state(-1);
 
   let current = $state<string | null>(null);
   let buffer = $state("");
@@ -81,7 +94,15 @@
     | null
   >(null);
   let pendingDelete = $state<string | null>(null);
-  let menu = $state<{ x: number; y: number; path: string; isDir: boolean } | null>(null);
+  let menu = $state<{
+    x: number;
+    y: number;
+    path: string;
+    isDir: boolean;
+    /** Menú abierto sobre el área vacía del explorador (raíz del espacio):
+        solo «nueva nota/carpeta», sin renombrar/borrar/exportar. */
+    root?: boolean;
+  } | null>(null);
 
   let reloadKey = $state(0);
   let pendingGoto = $state<number | null>(null);
@@ -90,11 +111,17 @@
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let showMenu = $state(false);
+  // T24: menú de formato del editor. T22: sección activa de Ajustes.
+  let fmtMenu = $state<{ x: number; y: number } | null>(null);
+  let settingsSection = $state<
+    "appearance" | "sync" | "backup" | "extensions" | "about"
+  >("appearance");
 
-  /** Un clic en cualquier parte cierra el menú contextual y el desplegable. */
+  /** Un clic en cualquier parte cierra menús contextuales y desplegables. */
   function closeMenus() {
     menu = null;
     showMenu = false;
+    fmtMenu = null;
   }
 
   const selectedSpace = $derived(
@@ -102,10 +129,49 @@
       ? (config.spaces[config.selected] ?? null)
       : null,
   );
+  // T21: módulos desactivados → puertas para exportador y temas.
+  const exporterOn = $derived(
+    !(config?.disabled_ext ?? []).includes("exporter"),
+  );
+  const themesOn = $derived(
+    !(config?.disabled_ext ?? []).includes("core-themes"),
+  );
+
+  // T21: activar/desactivar un módulo y refrescar lo afectado.
+  async function toggleExt(id: string, enabled: boolean) {
+    if (!config) return;
+    const set = new Set(config.disabled_ext);
+    if (enabled) set.delete(id);
+    else set.add(id);
+    config.disabled_ext = [...set];
+    await persist();
+    extRows = await api.extensionsListing();
+    reloadKey++; // el árbol refleja el visor de código on/off
+  }
+
+  // T23: reportar incidencia y comprobar actualizaciones.
+  async function reportIssue() {
+    await openUrl("https://github.com/Aleixenandros/oxydice/issues");
+  }
+  async function doCheckUpdate() {
+    try {
+      const u = await api.checkUpdate();
+      if (u.newer) {
+        logMsg("info", t("st.updateAvailable", u.latest));
+        await openUrl(u.url);
+      } else {
+        logMsg("info", t("st.upToDate", u.current));
+      }
+    } catch (e) {
+      logMsg("error", t("st.updateErr", String(e)));
+    }
+  }
   // Visor de código (T17): cualquier archivo abierto que no sea `.md`.
   const isCode = $derived(current != null && !/\.md$/i.test(current));
   const editing = $derived(
-    view === "explorer" && current != null && (docMode === "edit" || isCode),
+    view === "explorer" &&
+      current != null &&
+      (docMode === "edit" || docMode === "split" || isCode),
   );
 
   function logMsg(level: LogLevel, msg: string) {
@@ -143,6 +209,27 @@
         syncState = e.payload;
       });
       unlistenSync = un;
+      // Restaura las pestañas de la sesión anterior; las notas que ya no
+      // existan en disco se ignoran sin error.
+      const restored: Tab[] = [];
+      for (const p of config.open_tabs ?? []) {
+        try {
+          const n = await api.readNote(p);
+          restored.push({ path: p, content: n.content, dirty: false, mtime: n.mtime_secs });
+        } catch {
+          /* nota ausente: se omite */
+        }
+      }
+      if (restored.length) {
+        tabs = restored;
+        activeIdx = Math.min(config.active_tab ?? 0, restored.length - 1);
+        const tb = restored[activeIdx];
+        current = tb.path;
+        buffer = tb.content;
+        dirty = false;
+        mtime = tb.mtime;
+        loadedPath = null;
+      }
       logMsg("info", t("app.started"));
     })();
     dispose = onSystemSchemeChange(() => void applyTheme());
@@ -152,16 +239,27 @@
         e.preventDefault();
         void flush(false);
       }
+      // Contrae/expande la columna izquierda (rail + barra lateral).
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        showSidebar = !showSidebar;
+      }
     };
     window.addEventListener("keydown", onKey);
     const onClose = () => void flush(true);
     window.addEventListener("beforeunload", onClose);
+    // T19: quita el menú nativo del webview (incl. «Inspeccionar») en toda
+    // la app. Los menús propios (árbol, editor) abren igual: solo se anula
+    // la acción por defecto, no la propagación.
+    const onCtx = (e: MouseEvent) => e.preventDefault();
+    window.addEventListener("contextmenu", onCtx);
 
     return () => {
       dispose();
       unlistenSync();
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("beforeunload", onClose);
+      window.removeEventListener("contextmenu", onCtx);
     };
   });
 
@@ -175,7 +273,11 @@
 
   // Render de la vista de lectura (única fuente de verdad: el core).
   $effect(() => {
-    if (view === "explorer" && current != null && docMode === "read") {
+    if (
+      view === "explorer" &&
+      current != null &&
+      (docMode === "read" || docMode === "split")
+    ) {
       api.renderMarkdown(buffer).then((h) => (previewHtml = h)).catch(() => {});
     }
   });
@@ -208,7 +310,25 @@
     }
   });
 
-  // ---- documento --------------------------------------------------------
+  // ---- documento y pestañas ---------------------------------------------
+
+  /** Vuelca el estado vivo (buffer/dirty/mtime) en la pestaña activa para
+      que conmutar entre pestañas no pierda ediciones sin guardar. */
+  function syncActiveTab() {
+    if (activeIdx >= 0 && tabs[activeIdx]) {
+      tabs[activeIdx].content = buffer;
+      tabs[activeIdx].dirty = dirty;
+      tabs[activeIdx].mtime = mtime;
+    }
+  }
+
+  /** Persiste las pestañas abiertas (rutas + activa) en la config. */
+  async function persistTabs() {
+    if (!config) return;
+    config.open_tabs = tabs.map((tb) => tb.path);
+    config.active_tab = activeIdx < 0 ? 0 : activeIdx;
+    await persist();
+  }
 
   async function flush(quiet: boolean) {
     clearTimeout(autosaveTimer);
@@ -216,6 +336,11 @@
     try {
       mtime = await api.writeNote(current, buffer);
       dirty = false;
+      if (activeIdx >= 0 && tabs[activeIdx]) {
+        tabs[activeIdx].dirty = false;
+        tabs[activeIdx].mtime = mtime;
+        tabs[activeIdx].content = buffer;
+      }
       if (quiet) status = t("st.saved");
       else logMsg("info", t("st.saved"));
       if (config?.backup_on_save) await runBackup(true);
@@ -232,25 +357,78 @@
   function onEdit(value: string) {
     buffer = value;
     dirty = true;
+    if (activeIdx >= 0 && tabs[activeIdx]) tabs[activeIdx].dirty = true;
     status = t("st.unsaved");
     scheduleAutosave();
   }
 
+  /** Activa la pestaña `i` (guarda antes la saliente). */
+  async function selectTab(i: number) {
+    if (i < 0 || i >= tabs.length) return;
+    view = "explorer";
+    if (i === activeIdx) return;
+    await flush(true);
+    syncActiveTab();
+    activeIdx = i;
+    const tb = tabs[i];
+    current = tb.path;
+    buffer = tb.content;
+    dirty = tb.dirty;
+    mtime = tb.mtime;
+    loadedPath = null;
+    void persistTabs();
+  }
+
+  /** Cierra la pestaña `i` y activa una vecina (o vacía la vista). */
+  async function closeTab(i: number) {
+    if (i < 0 || i >= tabs.length) return;
+    const wasActive = i === activeIdx;
+    if (wasActive) await flush(true);
+    const next = tabs.filter((_, k) => k !== i);
+    if (next.length === 0) {
+      tabs = [];
+      activeIdx = -1;
+      current = null;
+      buffer = "";
+      dirty = false;
+      mtime = null;
+      loadedPath = null;
+      void persistTabs();
+      return;
+    }
+    let ni = activeIdx;
+    if (i < activeIdx) ni = activeIdx - 1;
+    else if (wasActive) ni = Math.min(i, next.length - 1);
+    tabs = next;
+    if (wasActive) {
+      activeIdx = -1; // fuerza la recarga en selectTab
+      await selectTab(ni);
+    } else {
+      activeIdx = ni;
+      void persistTabs();
+    }
+  }
+
   async function openNote(path: string) {
-    if (current === path) {
-      view = "explorer";
+    view = "explorer";
+    const ex = tabs.findIndex((tb) => tb.path === path);
+    if (ex >= 0) {
+      await selectTab(ex);
       return;
     }
     await flush(true);
     try {
       const note = await api.readNote(path);
-      buffer = note.content;
-      mtime = note.mtime_secs;
+      syncActiveTab();
+      tabs = [...tabs, { path, content: note.content, dirty: false, mtime: note.mtime_secs }];
+      activeIdx = tabs.length - 1;
       current = path;
+      buffer = note.content;
       dirty = false;
+      mtime = note.mtime_secs;
       loadedPath = null;
-      view = "explorer";
       status = t("st.opened", api.baseName(path));
+      void persistTabs();
     } catch (e) {
       logMsg("error", t("st.readErr", String(e)));
     }
@@ -289,12 +467,21 @@
     logMsg("info", t("st.spaceAdded", api.baseName(dir)));
   }
 
+  // Cierra todo (cambio/eliminación de espacio). El llamante persiste la
+  // config justo después, así que aquí solo se vacían los campos.
   function clearOpen() {
     void flush(true);
+    tabs = [];
+    activeIdx = -1;
     current = null;
     buffer = "";
     dirty = false;
+    mtime = null;
     loadedPath = null;
+    if (config) {
+      config.open_tabs = [];
+      config.active_tab = 0;
+    }
   }
 
   async function removeCurrentSpace() {
@@ -344,10 +531,12 @@
         return;
       } else if (d.kind === "rename" && d.target) {
         const np = await api.renamePath(d.target, name);
-        if (current === d.target) current = np;
-        else if (current && current.startsWith(d.target)) {
-          current = np + current.slice(d.target.length);
-        }
+        const tgt = d.target;
+        const remap = (p: string) =>
+          p === tgt ? np : p.startsWith(tgt) ? np + p.slice(tgt.length) : p;
+        tabs = tabs.map((tb) => ({ ...tb, path: remap(tb.path) }));
+        if (current) current = remap(current);
+        void persistTabs();
         logMsg("info", t("st.renamed", api.baseName(np)));
       }
       reloadKey++;
@@ -362,10 +551,28 @@
     if (!path) return;
     try {
       await api.deletePath(path);
-      if (current && (current === path || current.startsWith(path))) {
-        current = null;
-        buffer = "";
-        dirty = false;
+      const hit = (p: string) => p === path || p.startsWith(path);
+      if (tabs.some((tb) => hit(tb.path))) {
+        const activePath = activeIdx >= 0 ? tabs[activeIdx].path : null;
+        const survive = tabs.filter((tb) => !hit(tb.path));
+        if (survive.length === 0) {
+          tabs = [];
+          activeIdx = -1;
+          current = null;
+          buffer = "";
+          dirty = false;
+          mtime = null;
+          loadedPath = null;
+          void persistTabs();
+        } else {
+          tabs = survive;
+          const keep =
+            activePath && !hit(activePath)
+              ? survive.findIndex((tb) => tb.path === activePath)
+              : 0;
+          activeIdx = -1; // fuerza la recarga
+          await selectTab(Math.max(0, keep));
+        }
       }
       reloadKey++;
       logMsg("info", t("st.deleted"));
@@ -376,6 +583,16 @@
 
   function onContextMenu(e: MouseEvent, path: string, isDir: boolean) {
     menu = { x: e.clientX, y: e.clientY, path, isDir };
+  }
+
+  // Clic derecho en el área vacía del explorador: menú raíz del espacio
+  // (nueva nota/carpeta). Si el clic cae sobre una fila del árbol, su
+  // propio manejador ya abrió el menú; aquí no hacemos nada.
+  function onSpaceMenu(e: MouseEvent) {
+    if ((e.target as HTMLElement).closest("button")) return;
+    if (!selectedSpace) return;
+    e.preventDefault();
+    menu = { x: e.clientX, y: e.clientY, path: selectedSpace, isDir: true, root: true };
   }
 
   // ---- temas ------------------------------------------------------------
@@ -426,37 +643,61 @@
     await applyTheme();
   }
 
-  // T18: exportar la nota como HTML autónomo (lo construye el core).
-  async function exportHtml() {
-    if (!config || !current) return;
-    const title = meta.title ?? api.stem(current);
-    const path = await saveDialog({
-      defaultPath: `${api.stem(current)}.html`,
+  // T18/T20/T26: exportación de una nota (por ruta, desde el menú de la
+  // nota). Lee el contenido para poder exportar también notas no abiertas.
+  async function noteContent(path: string): Promise<string> {
+    if (path === current) return buffer;
+    return (await api.readNote(path)).content;
+  }
+
+  async function exportNoteHtml(path: string) {
+    if (!config) return;
+    const out = await saveDialog({
+      defaultPath: `${api.stem(path)}.html`,
       filters: [{ name: "HTML", extensions: ["html"] }],
     });
-    if (typeof path !== "string") return;
-    const r = await api.resolveTheme(
-      config.theme,
-      false,
-      $state.snapshot(config.custom_theme),
-    );
+    if (typeof out !== "string") return;
     try {
-      await api.exportHtml(path, buffer, title, r.palette);
-      logMsg("info", t("st.htmlExported", path));
+      const md = await noteContent(path);
+      const r = await api.resolveTheme(
+        config.theme,
+        false,
+        $state.snapshot(config.custom_theme),
+      );
+      await api.exportHtml(out, md, api.stem(path), r.palette);
+      logMsg("info", t("st.htmlExported", out));
     } catch (e) {
       logMsg("error", t("st.exportErr", String(e)));
     }
   }
 
-  // T18: PDF vía «imprimir» del webview sobre una vista de solo impresión
-  // (mismo HTML saneado + tema; sin dependencias). El usuario elige
-  // «Guardar como PDF» en el diálogo del sistema.
-  async function exportPdf() {
-    printHtml = await api.renderMarkdown(buffer);
-    printing = true;
-    await tick();
-    window.print();
-    printing = false;
+  async function exportNoteMd(path: string) {
+    const out = await saveDialog({
+      defaultPath: `${api.stem(path)}.md`,
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+    if (typeof out !== "string") return;
+    try {
+      await api.exportMd(out, await noteContent(path));
+      logMsg("info", t("st.htmlExported", out));
+    } catch (e) {
+      logMsg("error", t("st.exportErr", String(e)));
+    }
+  }
+
+  // PDF vía «imprimir» del webview sobre una vista de solo impresión (mismo
+  // HTML saneado + tema; sin dependencias). El usuario elige «Guardar como
+  // PDF» en el diálogo del sistema.
+  async function exportNotePdf(path: string) {
+    try {
+      printHtml = await api.renderMarkdown(await noteContent(path));
+      printing = true;
+      await tick();
+      window.print();
+      printing = false;
+    } catch (e) {
+      logMsg("error", t("st.exportErr", String(e)));
+    }
   }
 
   async function doExportTheme() {
@@ -574,13 +815,17 @@
     }
   }
 
-  // T6: editor de metadatos del frontmatter (round-trip en el core).
-  function openMetaDlg() {
+  // T6: editor de metadatos del frontmatter (round-trip en el core). Se
+  // abre desde el menú contextual de la nota; si no es la nota abierta, la
+  // abre primero para que el guardado actúe sobre `current`.
+  async function openMetaFor(path: string) {
+    if (path !== current) await openNote(path);
+    const m = await api.docMeta(buffer);
     metaDlg = {
-      title: meta.title ?? "",
-      status: meta.status ?? "",
-      author: meta.author ?? "",
-      tags: meta.tags.join(", "),
+      title: m.title ?? "",
+      status: m.status ?? "",
+      author: m.author ?? "",
+      tags: m.tags.join(", "),
     };
   }
 
@@ -597,6 +842,8 @@
       });
       const note = await api.readNote(current);
       buffer = note.content;
+      dirty = false;
+      syncActiveTab(); // la pestaña activa refleja el frontmatter nuevo
       loadedPath = null; // fuerza recargar el editor con el frontmatter nuevo
       logMsg("info", t("st.metaSaved"));
     } catch (e) {
@@ -649,129 +896,143 @@
 <svelte:window onclick={closeMenus} />
 
 <div class="app">
-  <!-- ===== barra superior ===== -->
-  <header class="topbar">
-    <button class="icon-btn" title={t("tb.toggleSidebar")}
-      onclick={() => (showSidebar = !showSidebar)} aria-label={t("tb.sidebar")}>▤</button>
-    <div class="menu-wrap">
-      <button class="icon-btn" aria-label={t("tb.menu")}
-        onclick={(e) => { e.stopPropagation(); showMenu = !showMenu; }}>☰</button>
-      {#if showMenu}
-        <div class="popup" role="menu">
-          <button onclick={() => { showMenu = false; void addSpace(); }}>{t("tb.addSpace")}</button>
-          <button disabled={config?.selected == null}
-            onclick={() => { showMenu = false; void removeCurrentSpace(); }}>
-            {t("tb.removeSpace")}
-          </button>
-        </div>
-      {/if}
-    </div>
-
-    <span class="crumb">
-      {#if selectedSpace && current}
-        {api.baseName(selectedSpace)} &nbsp;›&nbsp; {api.relativeTo(selectedSpace, current)}
-      {:else if selectedSpace}
-        {api.baseName(selectedSpace)}
-      {:else}
-        {t("tb.noSpace")}
-      {/if}
-    </span>
-
-    <div class="spacer"></div>
-
-    <button class="sync {syncTone}" title={syncTitle}
-      onclick={runSync} aria-label={t("tb.syncNow")}>{syncGlyph}</button>
-
-    <select class="select" value={config?.theme ?? SYSTEM_ID}
-      onchange={(e) => setTheme((e.currentTarget as HTMLSelectElement).value)}>
-      <option value={SYSTEM_ID}>{t("common.system")}</option>
-      {#each themeCatalog as th (th.id)}
-        <option value={th.id}>{th.name}</option>
-      {/each}
-      <option value={CUSTOM_ID}>{t("common.custom")}</option>
-    </select>
-
-    {#if view === "explorer" && current && !isCode}
-      <button class="icon-btn" title={t("tb.outline")}
-        onclick={() => (showOutline = !showOutline)}
-        aria-label={t("dh.outline")}>{showOutline ? "◧" : "▢"}</button>
-      <div class="segmented">
-        <button class:on={docMode === "edit"} onclick={() => (docMode = "edit")}>{t("common.edit")}</button>
-        <button class:on={docMode === "read"} onclick={() => (docMode = "read")}>{t("common.view")}</button>
+  <!-- ===== rail de iconos (disposición estilo Obsidian) ===== -->
+  <!-- Contraíble: el botón ▤ (o Ctrl/⌘+B) colapsa rail + barra lateral. -->
+  {#if showSidebar}
+    <nav class="rail">
+      <button class="rail-btn" title={t("tb.toggleSidebar")}
+        onclick={() => (showSidebar = false)} aria-label={t("tb.sidebar")}>▤</button>
+      <div class="rail-mid">
+        <button class="rail-btn" class:on={view === "explorer"}
+          title={t("nav.explorer")} onclick={() => switchView("explorer")}>🗀</button>
+        <button class="rail-btn" class:on={view === "search"}
+          title={t("nav.search")} onclick={() => switchView("search")}>⌕</button>
       </div>
-    {/if}
+      <div class="rail-bottom">
+        <button class="rail-btn" class:on={view === "settings"}
+          title={t("nav.settings")} onclick={() => switchView("settings")}>⚙</button>
+      </div>
+    </nav>
+  {:else}
+    <button class="reveal" title={t("tb.toggleSidebar")}
+      onclick={() => (showSidebar = true)} aria-label={t("tb.sidebar")}>▤</button>
+  {/if}
 
-    <span class="status">{dirty ? t("st.unsaved") : status}</span>
-  </header>
-
-  <div class="body">
-    <!-- ===== barra lateral ===== -->
-    {#if showSidebar}
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="logo">O</div>
-          <div>
-            <div class="brand-name">Oxydice</div>
-            <div class="brand-ver">v{VERSION}</div>
-          </div>
-        </div>
-
-        <nav class="nav">
-          <button class:on={view === "explorer"} onclick={() => switchView("explorer")}>🗀 &nbsp;{t("nav.explorer")}</button>
-          <button class:on={view === "search"} onclick={() => switchView("search")}>🔍 &nbsp;{t("nav.search")}</button>
-          <button class:on={view === "settings"} onclick={() => switchView("settings")}>⚙ &nbsp;{t("nav.settings")}</button>
-        </nav>
-        <hr />
-
-        {#if view !== "explorer"}
-          <p class="hint">{t("sb.selectExplorer")}</p>
-        {:else if !config}
-          <p class="hint">{t("sb.loading")}</p>
-        {:else}
+  <!-- ===== barra lateral (explorador) ===== -->
+  {#if showSidebar}
+    <aside class="sidebar">
+      <div class="side-tools">
+        {#if config && config.spaces.length}
           <select class="select wide" value={config.selected ?? -1}
             onchange={(e) => selectSpace(+(e.currentTarget as HTMLSelectElement).value)}>
-            {#if config.spaces.length === 0}
-              <option value={-1}>{t("sb.noSpacePicker")}</option>
-            {/if}
             {#each config.spaces as sp, i (sp)}
               <option value={i}>{api.baseName(sp)}</option>
             {/each}
           </select>
-
-          {#if selectedSpace}
-            <div class="row-btns">
-              <button class="btn" onclick={() => openDlg("note", selectedSpace!)}>{t("sb.newNote")}</button>
-              <button class="btn" onclick={() => openDlg("folder", selectedSpace!)}>{t("sb.newFolder")}</button>
-            </div>
-            <input class="text-in" placeholder={t("sb.filterTag")}
-              bind:value={tagFilter}
-              onkeydown={(e) => { if (e.key === "Enter") applyTagFilter(); }}
-              oninput={() => { if (!tagFilter.trim()) tagHits = []; }} />
-            <div class="section-label">{t("sb.notes")}</div>
-            <div class="tree-scroll">
-              {#if tagFilter.trim() && tagHits.length >= 0 && tagHits.length > 0}
-                <p class="hint small">{t("sb.tagResults", tagHits.length, tagFilter.trim().replace(/^#/, ""))}</p>
-                {#each tagHits as p (p)}
-                  <button class="tag-hit" class:active={current === p}
-                    onclick={() => openNote(p)}>{api.stem(p)}</button>
-                {/each}
-              {:else}
-                <Tree dir={selectedSpace} currentPath={current} {reloadKey}
-                  onOpen={openNote} {onContextMenu} />
-              {/if}
-            </div>
-          {:else}
-            <div class="empty-side">
-              <p>{t("sb.noSpaces")}</p>
-              <button class="btn" onclick={addSpace}>{t("sb.addSpace")}</button>
+        {/if}
+        {#if selectedSpace}
+          <button class="icon-btn" title={t("sb.newNote")}
+            onclick={() => openDlg("note", selectedSpace!)} aria-label={t("sb.newNote")}>✑</button>
+          <button class="icon-btn" title={t("sb.newFolder")}
+            onclick={() => openDlg("folder", selectedSpace!)} aria-label={t("sb.newFolder")}>🗀</button>
+        {/if}
+        <div class="menu-wrap">
+          <button class="icon-btn" aria-label={t("tb.menu")}
+            onclick={(e) => { e.stopPropagation(); showMenu = !showMenu; }}>☰</button>
+          {#if showMenu}
+            <div class="popup" role="menu">
+              <button onclick={() => { showMenu = false; void addSpace(); }}>{t("tb.addSpace")}</button>
+              <button disabled={config?.selected == null}
+                onclick={() => { showMenu = false; void removeCurrentSpace(); }}>
+                {t("tb.removeSpace")}
+              </button>
             </div>
           {/if}
-        {/if}
-      </aside>
-    {/if}
+        </div>
+      </div>
 
-    <!-- ===== área central ===== -->
-    <main class="center" class:canvas={editing}>
+      {#if view !== "explorer"}
+        <p class="hint side-hint">{t("sb.selectExplorer")}</p>
+      {:else if !config}
+        <p class="hint side-hint">{t("sb.loading")}</p>
+      {:else if selectedSpace}
+        <input class="text-in" placeholder={t("sb.filterTag")}
+          bind:value={tagFilter}
+          onkeydown={(e) => { if (e.key === "Enter") applyTagFilter(); }}
+          oninput={() => { if (!tagFilter.trim()) tagHits = []; }} />
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="tree-scroll" oncontextmenu={onSpaceMenu}>
+          {#if tagFilter.trim() && tagHits.length > 0}
+            <p class="hint small">{t("sb.tagResults", tagHits.length, tagFilter.trim().replace(/^#/, ""))}</p>
+            {#each tagHits as p (p)}
+              <button class="tag-hit" class:active={current === p}
+                onclick={() => openNote(p)}>{api.stem(p)}</button>
+            {/each}
+          {:else}
+            <Tree dir={selectedSpace} currentPath={current} {reloadKey}
+              onOpen={openNote} {onContextMenu} />
+          {/if}
+        </div>
+      {:else}
+        <div class="empty-side">
+          <p>{t("sb.noSpaces")}</p>
+          <button class="btn" onclick={addSpace}>{t("sb.addSpace")}</button>
+        </div>
+      {/if}
+
+      <div class="side-bottom">
+        <span class="app-name">Oxydice <small>v{VERSION}</small></span>
+        <span class="spacer"></span>
+        <button class="sync {syncTone}" title={syncTitle}
+          onclick={runSync} aria-label={t("tb.syncNow")}>{syncGlyph}</button>
+        <button class="icon-btn" title={t("nav.settings")}
+          onclick={() => switchView("settings")} aria-label={t("nav.settings")}>⚙</button>
+      </div>
+    </aside>
+  {/if}
+
+  <!-- ===== área central ===== -->
+  <main class="center" class:canvas={editing}>
+    <header class="main-head">
+      <span class="crumb">
+        {#if selectedSpace && current}
+          {api.baseName(selectedSpace)} &nbsp;›&nbsp; {api.relativeTo(selectedSpace, current)}
+        {:else if selectedSpace}
+          {api.baseName(selectedSpace)}
+        {:else}
+          {t("tb.noSpace")}
+        {/if}
+      </span>
+      <div class="spacer"></div>
+      {#if view === "explorer" && current && !isCode}
+        <button class="icon-btn" title={t("tb.outline")}
+          onclick={() => (showOutline = !showOutline)}
+          aria-label={t("dh.outline")}>{showOutline ? "◧" : "▢"}</button>
+        <div class="segmented">
+          <button class:on={docMode === "edit"} onclick={() => (docMode = "edit")}>{t("common.edit")}</button>
+          <button class:on={docMode === "split"} onclick={() => (docMode = "split")}>{t("common.split")}</button>
+          <button class:on={docMode === "read"} onclick={() => (docMode = "read")}>{t("common.view")}</button>
+        </div>
+      {/if}
+      <span class="status">{dirty ? t("st.unsaved") : status}</span>
+    </header>
+    {#if view === "explorer" && tabs.length > 0}
+      <div class="tabs" role="tablist">
+        {#each tabs as tb, i (tb.path)}
+          <div class="tab" class:on={i === activeIdx}>
+            <button class="tab-label" role="tab" aria-selected={i === activeIdx}
+              title={tb.path} onclick={() => selectTab(i)}
+              onauxclick={(e) => { if (e.button === 1) closeTab(i); }}>
+              <span class="tab-dot" class:dirty={tb.dirty}>●</span>
+              <span class="tab-name">{api.stem(tb.path)}</span>
+            </button>
+            <button class="tab-x" aria-label={t("tab.close")} title={t("tab.close")}
+              onclick={(e) => { e.stopPropagation(); closeTab(i); }}>✕</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+    <div class="center-body">
       {#if view === "search"}
         <div class="pad">
           <h1>{t("se.title")}</h1>
@@ -807,9 +1068,15 @@
       {:else if view === "settings"}
         <div class="pad scroll">
           <h1>{t("set.title")}</h1>
-          <p class="hint">{t("set.subtitle")}</p>
-
           {#if config}
+            <nav class="set-nav">
+              {#each [["appearance", "set.appearance"], ["sync", "set.sync"], ["backup", "set.backup"], ["extensions", "set.extensions"], ["about", "set.about"]] as [s, key] (s)}
+                <button class:on={settingsSection === s}
+                  onclick={() => (settingsSection = s as typeof settingsSection)}>{t(key)}</button>
+              {/each}
+            </nav>
+
+            {#if settingsSection === "appearance"}
             <!-- Apariencia -->
             <div class="card">
               <div class="section-label">{t("set.appearance")}</div>
@@ -825,20 +1092,28 @@
               <div class="chips">
                 <button class="chip-btn" class:on={config.theme === SYSTEM_ID}
                   onclick={() => setTheme(SYSTEM_ID)}>{t("common.system")}</button>
-                {#each themeCatalog as th (th.id)}
-                  <button class="chip-btn" class:on={config.theme === th.id}
-                    onclick={() => setTheme(th.id)}>{th.name}</button>
-                {/each}
+                {#if themesOn}
+                  {#each themeCatalog as th (th.id)}
+                    <button class="chip-btn" class:on={config.theme === th.id}
+                      onclick={() => setTheme(th.id)}>{th.name}</button>
+                  {/each}
+                {/if}
                 <button class="chip-btn" class:on={config.theme === CUSTOM_ID}
                   onclick={() => setTheme(CUSTOM_ID)}>{t("common.custom")}</button>
               </div>
 
               <div class="field-label">{t("set.editorFont")}</div>
               <select class="select" value={config.editor_font}
+                disabled={!!config.editor_font_family.trim()}
                 onchange={async (e) => { config!.editor_font = (e.currentTarget as HTMLSelectElement).value as "Mono" | "Sans"; await persist(); }}>
                 <option value="Mono">JetBrains Mono</option>
                 <option value="Sans">Inter</option>
               </select>
+
+              <div class="field-label">{t("set.systemFont")}</div>
+              <input class="text-in" placeholder={t("set.systemFontPh")}
+                value={config.editor_font_family}
+                onchange={async (e) => { config!.editor_font_family = (e.currentTarget as HTMLInputElement).value; await persist(); }} />
 
               <div class="field-label">{t("set.fontSize", config.editor_font_size)}</div>
               <input type="range" min="11" max="22" step="1"
@@ -873,6 +1148,9 @@
               </label>
             </div>
 
+            {/if}
+
+            {#if settingsSection === "sync"}
             <!-- Sincronización -->
             <div class="card">
               <div class="section-label">{t("set.sync")}</div>
@@ -945,6 +1223,9 @@
               </div>
             </div>
 
+            {/if}
+
+            {#if settingsSection === "backup"}
             <!-- Copia de seguridad -->
             <div class="card">
               <div class="section-label">{t("set.backup")}</div>
@@ -964,30 +1245,43 @@
                 onclick={() => runBackup(false)}>{t("set.backupNow")}</button>
             </div>
 
+            {/if}
+
+            {#if settingsSection === "extensions"}
             <!-- Extensiones -->
             <div class="card">
               <div class="section-label">{t("set.extensions")}</div>
               <p class="hint small">{t("set.extHint")}</p>
               {#each extRows as r (r.kind + r.id)}
                 <div class="ext-row">
+                  <label class="switch" title={r.id}>
+                    <input type="checkbox" checked={r.enabled}
+                      onchange={(e) => toggleExt(r.id, (e.currentTarget as HTMLInputElement).checked)} />
+                  </label>
                   <span class="hint small">[{r.kind}]</span>
                   <span>{r.name}</span>
                   <span class="spacer"></span>
                   <span class="hint small">{r.detail}</span>
-                  <span class="hint small">{r.id}</span>
                 </div>
               {/each}
             </div>
 
+            {/if}
+
+            {#if settingsSection === "about"}
             <!-- Acerca de -->
             <div class="card">
               <div class="section-label">{t("set.about")}</div>
               <p><strong>Oxydice v{VERSION}</strong></p>
               <p>{t("set.author")}</p>
               <p>{t("set.license")}</p>
-              <a class="link" href="https://github.com/Aleixenandros/oxydice"
-                target="_blank" rel="noreferrer">{t("set.repo")}</a>
+              <div class="row-btns">
+                <button class="btn" onclick={reportIssue}>{t("set.reportIssue")}</button>
+                <button class="btn" onclick={doCheckUpdate}>{t("set.checkUpdate")}</button>
+                <button class="btn" onclick={() => openUrl("https://github.com/Aleixenandros/oxydice")}>{t("set.repo")}</button>
+              </div>
             </div>
+            {/if}
           {/if}
         </div>
       {:else if !selectedSpace}
@@ -1007,6 +1301,7 @@
             <div class="editor-wrap">
               <Editor bind:this={editorRef} content={buffer}
                 font={config.editor_font} fontSize={config.editor_font_size}
+                fontFamily={config.editor_font_family}
                 onChange={() => {}} onSave={() => {}}
                 readOnly={true} filename={api.baseName(current)} />
             </div>
@@ -1017,11 +1312,6 @@
         <div class="doc-header">
           <div class="doc-title-row">
             <h1>{meta.title ?? api.stem(current)}</h1>
-            <div class="row-btns">
-              <button class="btn" onclick={openMetaDlg}>{t("dh.editMeta")}</button>
-              <button class="btn" onclick={exportHtml}>{t("dh.exportHtml")}</button>
-              <button class="btn" onclick={exportPdf}>{t("dh.exportPdf")}</button>
-            </div>
           </div>
           <div class="meta-cards">
             <div class="meta-card">
@@ -1075,14 +1365,23 @@
               <div class="editor-wrap">
                 <Editor bind:this={editorRef} content={buffer}
                   font={config.editor_font} fontSize={config.editor_font_size}
-                  onChange={onEdit} onSave={() => flush(false)} />
+                  fontFamily={config.editor_font_family}
+                  onChange={onEdit} onSave={() => flush(false)}
+                  onContextMenu={(x, y) => (fmtMenu = { x, y })} />
+              </div>
+            {/if}
+            {#if docMode === "split"}
+              <!-- Vista dividida: editor a la izquierda, vista previa a la
+                   derecha (HTML saneado en el core con `ammonia`). -->
+              <div class="preview split-pane scroll">
+                <div class="md">{@html previewHtml}</div>
               </div>
             {/if}
           </div>
         {/if}
       {/if}
+    </div>
     </main>
-  </div>
 </div>
 
 <!-- ===== menú contextual ===== -->
@@ -1091,10 +1390,39 @@
     {#if menu.isDir}
       <button onclick={() => { openDlg("note", menu!.path); menu = null; }}>{t("ctx.newNote")}</button>
       <button onclick={() => { openDlg("folder", menu!.path); menu = null; }}>{t("ctx.newFolder")}</button>
-      <hr />
+      {#if !menu.root}<hr />{/if}
     {/if}
-    <button onclick={() => { openDlg("rename", "", menu!.path); menu = null; }}>{t("ctx.rename")}</button>
-    <button class="danger" onclick={() => { pendingDelete = menu!.path; menu = null; }}>{t("ctx.delete")}</button>
+    {#if !menu.root}
+      <button onclick={() => { openDlg("rename", "", menu!.path); menu = null; }}>{t("ctx.rename")}</button>
+      {#if !menu.isDir && /\.md$/i.test(menu.path)}
+        <button onclick={() => { openMetaFor(menu!.path); menu = null; }}>{t("ctx.editMeta")}</button>
+      {/if}
+      {#if !menu.isDir && exporterOn && /\.md$/i.test(menu.path)}
+        <div class="ctx-sub">
+          <button class="ctx-parent">{t("ctx.export")} <span class="caret">▸</span></button>
+          <div class="flyout">
+            <button onclick={() => { exportNoteHtml(menu!.path); closeMenus(); }}>HTML</button>
+            <button onclick={() => { exportNotePdf(menu!.path); closeMenus(); }}>PDF</button>
+            <button onclick={() => { exportNoteMd(menu!.path); closeMenus(); }}>Markdown</button>
+          </div>
+        </div>
+      {/if}
+      <hr />
+      <button class="danger" onclick={() => { pendingDelete = menu!.path; menu = null; }}>{t("ctx.delete")}</button>
+    {/if}
+  </div>
+{/if}
+
+<!-- ===== menú de formato del editor (T24) ===== -->
+{#if fmtMenu}
+  <div class="ctx" style="left:{fmtMenu.x}px; top:{fmtMenu.y}px" role="menu">
+    {#each [["bold", "fmt.bold"], ["italic", "fmt.italic"], ["strike", "fmt.strike"], ["code", "fmt.code"]] as [k, key] (k)}
+      <button onclick={() => { editorRef?.format(k); fmtMenu = null; }}>{t(key)}</button>
+    {/each}
+    <hr />
+    {#each [["h1", "fmt.h1"], ["h2", "fmt.h2"], ["h3", "fmt.h3"], ["ul", "fmt.ul"], ["quote", "fmt.quote"], ["link", "fmt.link"]] as [k, key] (k)}
+      <button onclick={() => { editorRef?.format(k); fmtMenu = null; }}>{t(key)}</button>
+    {/each}
   </div>
 {/if}
 
@@ -1168,10 +1496,11 @@
 <style>
   .app {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     height: 100vh;
     background: var(--surface);
     color: var(--text);
+    overflow: hidden;
   }
   h1 {
     font-size: 1.55rem; font-weight: 600; letter-spacing: -0.01em;
@@ -1182,7 +1511,7 @@
 
   /* Foco accesible coherente (D1): un solo anillo de acento para todo lo
      interactivo. Solo con teclado (`:focus-visible`), nunca al click. */
-  :where(button, a, input, select):focus-visible {
+  :where(button, input, select):focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
     border-radius: 4px;
@@ -1192,17 +1521,94 @@
     * { transition: none !important; }
   }
 
-  /* barra superior */
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 7px 10px;
+  /* ===== rail de iconos (disposición estilo Obsidian) ===== */
+  .rail {
+    width: 44px; flex-shrink: 0;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 4px; padding: 8px 0;
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
   }
-  .crumb { color: var(--muted); margin-left: 6px; font-size: 0.85rem; }
+  .rail-mid { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+  .rail-bottom { margin-top: auto; }
+  .rail-btn {
+    width: 32px; height: 32px; border: none; background: none;
+    color: var(--muted); border-radius: 6px; cursor: pointer;
+    font-size: 16px; display: flex; align-items: center;
+    justify-content: center;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .rail-btn:hover { background: var(--hover); color: var(--text); }
+  .rail-btn.on { color: var(--accent); background: var(--faint); }
+
+  /* Iconos siempre monocromáticos: fuerza la presentación de texto (nunca
+     emoji a color); heredan `color` del tema. */
+  .rail-btn, .icon-btn, .sync, .reveal, .tab-x {
+    font-variant-emoji: text;
+  }
+
+  /* Botón flotante para reabrir la columna izquierda cuando está contraída. */
+  .reveal {
+    position: fixed; top: 8px; left: 8px; z-index: 90;
+    width: 30px; height: 30px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted); border-radius: 6px;
+    cursor: pointer; font-size: 15px; display: flex; align-items: center;
+    justify-content: center; opacity: 0.7;
+    transition: opacity 0.12s ease, color 0.12s ease;
+  }
+  .reveal:hover { opacity: 1; color: var(--text); }
+
+  /* cabecera mínima del documento (título/breadcrumb + controles) */
+  .main-head {
+    position: relative;
+    display: flex; align-items: center; gap: 6px;
+    height: 40px; padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .crumb {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    color: var(--muted); font-size: 0.82rem;
+    max-width: 60%; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; pointer-events: none;
+  }
+  .center-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .spacer { flex: 1; }
+
+  /* Barra de pestañas (una por nota abierta), estilo Obsidian: plana,
+     activa con realce tenue + acento, punto de «sin guardar». */
+  .tabs {
+    display: flex; flex-shrink: 0; overflow-x: auto;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .tab {
+    display: flex; align-items: center; flex-shrink: 0;
+    max-width: 200px; border-right: 1px solid var(--border);
+    color: var(--muted);
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .tab:hover { background: var(--hover); }
+  .tab.on { background: var(--faint); color: var(--accent); }
+  .tab-label {
+    display: flex; align-items: center; gap: 6px; min-width: 0;
+    background: none; border: none; color: inherit; font: inherit;
+    padding: 7px 4px 7px 12px; cursor: pointer;
+  }
+  .tab-name {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 0.85rem;
+  }
+  .tab-dot {
+    font-size: 0.6rem; line-height: 1; color: var(--muted);
+    opacity: 0; flex-shrink: 0;
+  }
+  .tab-dot.dirty { opacity: 1; color: var(--accent); }
+  .tab-x {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 0.75rem; padding: 4px 8px; border-radius: 4px;
+    opacity: 0.5; transition: opacity 0.12s ease, background-color 0.12s ease;
+  }
+  .tab-x:hover { opacity: 1; background: var(--hover); }
   .status { color: var(--muted); font-size: 0.78rem; min-width: 4ch; }
   .sync {
     background: none; border: none; cursor: pointer; font: inherit;
@@ -1272,25 +1678,6 @@
     border-right: 1px solid var(--border); padding: 10px;
     display: flex; flex-direction: column; min-height: 0;
   }
-  .brand { display: flex; align-items: center; gap: 8px; padding: 4px; }
-  .logo {
-    background: var(--accent); color: var(--accent-contrast);
-    font-weight: 700; border-radius: 5px; padding: 4px 9px;
-  }
-  .brand-name { font-weight: 600; }
-  .brand-ver { font-size: 0.72rem; color: var(--muted); }
-  .nav { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; }
-  .nav button {
-    display: flex; align-items: center; width: 100%; height: 34px;
-    padding: 0 10px; background: none; border: none; color: var(--muted);
-    border-radius: 4px; cursor: pointer; font: inherit; text-align: left;
-    transition: background-color 0.12s ease, color 0.12s ease;
-  }
-  .nav button:hover { background: var(--hover); color: var(--text); }
-  .nav button.on {
-    background: var(--accent); color: var(--accent-contrast);
-    font-weight: 600;
-  }
   .row-btns { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
   .tree-scroll { overflow: auto; flex: 1; min-height: 0; }
   .empty-side { text-align: center; color: var(--muted); margin-top: 20px; }
@@ -1333,18 +1720,18 @@
   }
 
   /* cabecera de documento */
-  .doc-header { padding: 22px 28px 16px; border-bottom: 1px solid var(--border); }
-  .meta-cards { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-  .meta-card {
-    display: flex; flex-direction: column; gap: 2px; min-width: 7rem;
-    background: var(--bg); border: 1px solid var(--border);
-    border-radius: 4px; padding: 8px 12px;
+  /* D2: cabecera mínima; metadatos como línea tenue, sin cajas. */
+  .doc-header { padding: 20px 28px 14px; border-bottom: 1px solid var(--border); }
+  .meta-cards {
+    display: flex; gap: 18px; margin-top: 8px; flex-wrap: wrap;
+    font-size: 0.8rem;
   }
+  .meta-card { display: flex; gap: 6px; align-items: baseline; }
   .meta-k {
-    font-size: 0.66rem; color: var(--muted); letter-spacing: 0.06em;
+    font-size: 0.7rem; color: var(--muted); letter-spacing: 0.04em;
     text-transform: uppercase;
   }
-  .meta-v { font-weight: 600; }
+  .meta-v { color: var(--muted); }
   .tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
   .chip {
     border: 1px solid var(--border); border-radius: 4px;
@@ -1379,9 +1766,14 @@
     border-radius: 4px; font: inherit;
   }
   .tag-hit:hover { background: var(--hover); }
-  .tag-hit.active { background: var(--accent); color: var(--accent-contrast); }
+  .tag-hit.active { background: var(--faint); color: var(--accent); }
 
   .preview { padding: 8px 28px 24px; }
+  /* Vista dividida: panel de previa a la derecha del editor, mismo ancho. */
+  .split-pane {
+    flex: 1; min-width: 0; border-left: 1px solid var(--border);
+    background: var(--surface);
+  }
 
   /* búsqueda */
   .search-input {
@@ -1393,10 +1785,10 @@
   .search-input:hover { border-color: var(--muted); }
   .search-input:focus { border-color: var(--accent); }
   .results { display: flex; flex-direction: column; gap: 8px; }
+  /* D2: tarjetas planas (sin sombra), separación por espacio. */
   .card {
     background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; padding: 18px; margin-bottom: 14px;
-    box-shadow: 0 1px 2px var(--shadow);
+    border-radius: 6px; padding: 18px; margin-bottom: 16px;
   }
   .hit { padding: 12px; margin: 0; }
   .hit-head { display: flex; gap: 8px; align-items: baseline; }
@@ -1434,7 +1826,23 @@
   .logline { font-family: "JetBrains Mono", monospace; font-size: 0.75rem; color: var(--muted); }
   .logline.warn { color: var(--accent); }
   .logline.error { color: var(--danger); }
-  .ext-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .ext-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+  .switch { display: inline-flex; }
+  .switch input { accent-color: var(--accent); cursor: pointer; }
+
+  /* T22: navegación por secciones de Ajustes (sobria, tipo Obsidian). */
+  .set-nav {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin: 10px 0 16px; border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  .set-nav button {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font: inherit; padding: 6px 10px; border-radius: 4px;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .set-nav button:hover { background: var(--hover); color: var(--text); }
+  .set-nav button.on { color: var(--accent); font-weight: 600; }
 
   /* menú contextual */
   .ctx {
@@ -1451,6 +1859,27 @@
   .ctx button.danger { color: var(--danger); }
   .ctx hr { margin: 4px 0; }
 
+  /* Submenú «Exportar»: se despliega a la derecha al pasar el ratón. */
+  .ctx-sub { position: relative; }
+  .ctx-sub > .ctx-parent {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+  }
+  .ctx-sub > .ctx-parent .caret { color: var(--muted); }
+  .ctx-sub .flyout {
+    display: none;
+    position: absolute; left: 100%; top: -5px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; box-shadow: 0 8px 24px var(--shadow);
+    min-width: 140px; padding: 4px;
+  }
+  /* Puente invisible para no perder el hover al pasar al desplegable. */
+  .ctx-sub::after {
+    content: ""; position: absolute; left: 100%; top: 0;
+    width: 8px; height: 100%;
+  }
+  .ctx-sub:hover .flyout { display: block; }
+
   /* modales */
   .overlay {
     position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
@@ -1459,7 +1888,7 @@
   .modal {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 22px; min-width: 340px; max-width: 90vw;
-    box-shadow: 0 20px 60px var(--shadow);
+    box-shadow: 0 8px 28px var(--shadow);
   }
   .modal input {
     width: 100%; padding: 8px 10px; margin-bottom: 12px;

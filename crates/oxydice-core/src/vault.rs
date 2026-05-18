@@ -47,9 +47,11 @@ fn mtime_secs(p: &Path) -> Option<u64> {
         .map(|d| d.as_secs())
 }
 
-/// Carpetas y notas `.md` de `dir`: carpetas primero y orden alfabético,
-/// omitiendo ocultos. Idéntico al `entries()` del antiguo explorador.
-pub fn entries(dir: &Path) -> Vec<Entry> {
+/// Carpetas y notas de `dir`: carpetas primero y orden alfabético, omitiendo
+/// ocultos. Con `include_code` se listan además los archivos de código que
+/// sabe mostrar el visor (T17); si el visor está desactivado (T21) se pasa
+/// `false` y solo se listan `.md`.
+pub fn entries_filtered(dir: &Path, include_code: bool) -> Vec<Entry> {
     let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -59,8 +61,16 @@ pub fn entries(dir: &Path) -> Vec<Entry> {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
             !name.starts_with('.')
         })
-        // Notas `.md` y, además, código/texto que sabe mostrar el visor (T17).
-        .filter(|p| p.is_dir() || crate::viewer::is_viewable(p))
+        .filter(|p| {
+            if p.is_dir() {
+                return true;
+            }
+            if include_code {
+                crate::viewer::is_viewable(p)
+            } else {
+                p.extension().is_some_and(|x| x == "md")
+            }
+        })
         .collect();
     v.sort_by(|a, b| (!a.is_dir(), a.file_name()).cmp(&(!b.is_dir(), b.file_name())));
     v.into_iter()
@@ -70,6 +80,12 @@ pub fn entries(dir: &Path) -> Vec<Entry> {
             Entry { path: p, name, is_dir }
         })
         .collect()
+}
+
+/// Carpetas, notas `.md` y código del visor de `dir` (atajo de
+/// [`entries_filtered`] con el visor habilitado).
+pub fn entries(dir: &Path) -> Vec<Entry> {
+    entries_filtered(dir, true)
 }
 
 pub fn read_note(path: &Path) -> Result<NoteData, String> {

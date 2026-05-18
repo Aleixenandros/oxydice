@@ -41,6 +41,8 @@ pub struct ExtRow {
     pub id: String,
     pub name: String,
     pub detail: String,
+    /// `false` si el usuario lo ha desactivado (T21).
+    pub enabled: bool,
 }
 
 /// Registro de extensiones activas del core.
@@ -116,8 +118,10 @@ impl Registry {
         }
     }
 
-    /// Filas para la pestaña de Extensiones de Ajustes.
-    pub fn listing(&self) -> Vec<ExtRow> {
+    /// Filas para la pestaña de Extensiones de Ajustes. `disabled` son los
+    /// ids que el usuario ha desactivado (T21); marca `enabled` en cada fila.
+    pub fn listing(&self, disabled: &[String]) -> Vec<ExtRow> {
+        let on = |id: &str| !disabled.iter().any(|d| d == id);
         let mut rows = Vec::new();
         for t in &self.themes {
             let n = t.themes().len();
@@ -126,6 +130,7 @@ impl Registry {
                 id: t.id().to_owned(),
                 name: t.name().to_owned(),
                 detail: format!("{n} temas"),
+                enabled: on(t.id()),
             });
         }
         for s in &self.syncs {
@@ -134,6 +139,7 @@ impl Registry {
                 id: s.id().to_owned(),
                 name: s.name().to_owned(),
                 detail: s.state().label().to_owned(),
+                enabled: on(s.id()),
             });
         }
         // Módulos de capacidad integrados (T17/T18): se listan junto al
@@ -143,12 +149,14 @@ impl Registry {
             id: "code-viewer".to_owned(),
             name: "Visor de código".to_owned(),
             detail: format!("{} extensiones", crate::viewer::CODE_EXTS.len()),
+            enabled: on("code-viewer"),
         });
         rows.push(ExtRow {
             kind: "Exportar".to_owned(),
             id: "exporter".to_owned(),
             name: "Exportador".to_owned(),
             detail: "HTML · PDF".to_owned(),
+            enabled: on("exporter"),
         });
         rows
     }

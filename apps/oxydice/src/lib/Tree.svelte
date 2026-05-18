@@ -118,8 +118,8 @@
     outline-offset: -2px;
   }
   .row.active {
-    background: var(--accent);
-    color: var(--accent-contrast);
+    background: var(--faint);
+    color: var(--accent);
   }
   .caret {
     display: inline-block;

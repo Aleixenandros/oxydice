@@ -10,13 +10,18 @@ solo frontend para escritorio (Linux/macOS/Windows) y, a futuro, móvil.
 - **Espacios**: registra varias carpetas como espacios y cambia entre ellas;
   el espacio activo se recuerda entre sesiones.
 - **Árbol de carpetas y notas** por espacio, con **menú contextual** (clic
-  derecho): crear nota, crear carpeta, renombrar y eliminar (con confirmación).
+  derecho sobre filas o sobre el área vacía del explorador): crear nota,
+  crear carpeta, renombrar, editar metadatos y eliminar (con confirmación).
+- **Pestañas**: cada nota abierta tiene su pestaña; se restauran entre
+  sesiones. La columna izquierda (iconos + barra lateral) se contrae con el
+  botón ▤ o `Ctrl/⌘ + B`.
 - **Autoguardado**: las notas se escriben a disco solas mientras editas; sin
   botón de guardar (también `Ctrl+S` para forzarlo).
-- **Editar / Vista**: editor Markdown (CodeMirror 6) con números de línea,
-  resaltado y panel de **esquema**; o vista de lectura renderizada en el core
-  (`pulldown-cmark`, HTML saneado) con **cabecera de metadatos** del
-  *frontmatter* (modificación, estado, autor, etiquetas).
+- **Editar / Dividir / Vista**: editor Markdown (CodeMirror 6) con números de
+  línea, resaltado y panel de **esquema**; modo **dividido** (editor + vista
+  previa en vivo); o vista de lectura renderizada en el core (`pulldown-cmark`,
+  HTML saneado) con **cabecera de metadatos** del *frontmatter*
+  (modificación, estado, autor, etiquetas).
 - **Búsqueda global**: texto en todas las notas del espacio, con ruta, línea
   y término resaltado; abrir un resultado salta a la línea.
 - **Visor de código**: además de `.md`, abre y resalta archivos html, css,
@@ -75,18 +80,10 @@ derecho → Abrir.
 
 1. **Añadir espacio** (menú ☰) y elige una carpeta.
 2. Crea notas/carpetas con **＋ Nota** / **＋ Carpeta** o con clic derecho.
-3. Edita en el panel central: se **autoguarda**. Alterna **Editar / Vista** y
-   abre el **esquema**.
+3. Edita en el panel central: se **autoguarda**. Alterna
+   **Editar / Dividir / Vista** y abre el **esquema**.
 4. **Buscar** en el rail para encontrar texto en todas las notas.
 5. Elige el tema en la barra superior o en **Ajustes › Apariencia**.
-
-## Estado y hoja de ruta
-
-Migrado de egui a Tauri 2 (un solo frontend). Detalle en
-[`memoria.md`](./memoria.md), [`arquitectura.md`](./arquitectura.md),
-[`tareas.md`](./tareas.md) y [`CHANGELOG.md`](./CHANGELOG.md). Siguiente:
-sincronización (OpenDAL: WebDAV/S3 con índice baseline y resolución de
-conflictos por bifurcación).
 
 ## Licencia
 

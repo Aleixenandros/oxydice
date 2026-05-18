@@ -40,6 +40,10 @@
     readOnly?: boolean;
     /** Nombre de archivo para detectar el lenguaje (visor de código). */
     filename?: string;
+    /** Clic derecho dentro del editor (T24): coords para el menú de formato. */
+    onContextMenu?: (x: number, y: number) => void;
+    /** Familia del sistema (T25): si no está vacía, sustituye a Mono/Sans. */
+    fontFamily?: string;
   }
 
   let {
@@ -50,6 +54,8 @@
     onSave,
     readOnly = false,
     filename = "",
+    onContextMenu,
+    fontFamily = "",
   }: Props = $props();
 
   // Lenguaje resuelto para el visor de código (carga perezosa de Lezer).
@@ -62,9 +68,11 @@
   const External = Annotation.define<boolean>();
 
   const family = $derived(
-    font === "Mono"
-      ? "'JetBrains Mono', ui-monospace, monospace"
-      : "'Inter', ui-sans-serif, system-ui, sans-serif",
+    fontFamily.trim()
+      ? `${fontFamily.trim()}, ui-monospace, monospace`
+      : font === "Mono"
+        ? "'JetBrains Mono', ui-monospace, monospace"
+        : "'Inter', ui-sans-serif, system-ui, sans-serif",
   );
 
   // Resaltado de sintaxis Markdown mapeado a variables del tema (guía §4.2).
@@ -229,9 +237,63 @@
   export function focus() {
     view?.focus();
   }
+
+  /** Aplica formato Markdown a la selección (T24, menú contextual). */
+  export function format(kind: string) {
+    if (!view || readOnly) return;
+    const { state } = view;
+    const sel = state.selection.main;
+    const text = state.sliceDoc(sel.from, sel.to);
+    const wrap = (m: string) => ({
+      changes: { from: sel.from, to: sel.to, insert: m + text + m },
+      selection: {
+        anchor: sel.from + m.length,
+        head: sel.from + m.length + text.length,
+      },
+    });
+    const prefix = (p: string) => {
+      const line = state.doc.lineAt(sel.from);
+      return {
+        changes: { from: line.from, insert: p },
+        selection: { anchor: sel.from + p.length },
+      };
+    };
+    let tr;
+    switch (kind) {
+      case "bold": tr = wrap("**"); break;
+      case "italic": tr = wrap("*"); break;
+      case "strike": tr = wrap("~~"); break;
+      case "code": tr = wrap("`"); break;
+      case "h1": tr = prefix("# "); break;
+      case "h2": tr = prefix("## "); break;
+      case "h3": tr = prefix("### "); break;
+      case "ul": tr = prefix("- "); break;
+      case "quote": tr = prefix("> "); break;
+      case "link":
+        tr = {
+          changes: {
+            from: sel.from,
+            to: sel.to,
+            insert: `[${text || "texto"}](url)`,
+          },
+        };
+        break;
+      default:
+        return;
+    }
+    view.dispatch(tr);
+    view.focus();
+  }
+
+  function onCtx(e: MouseEvent) {
+    // Suprime el menú nativo del webview dentro del editor y abre el de
+    // formato (salvo en el visor de código, que es solo lectura).
+    e.preventDefault();
+    if (!readOnly) onContextMenu?.(e.clientX, e.clientY);
+  }
 </script>
 
-<div class="editor" bind:this={host}></div>
+<div class="editor" bind:this={host} oncontextmenu={onCtx} role="textbox" tabindex="-1"></div>
 
 <style>
   .editor {

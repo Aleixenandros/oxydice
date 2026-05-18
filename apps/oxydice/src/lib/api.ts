@@ -41,11 +41,19 @@ export interface Config {
   remote: RemoteSettings;
   editor_font: EditorFont;
   editor_font_size: number;
+  /** Familia del sistema para el editor (T25); "" = usar Mono/Sans. */
+  editor_font_family: string;
   ui_scale: number;
   /** Idioma de la UI: "" = seguir al sistema; o es/en/de/pt. */
   lang: string;
   backup_dir: string | null;
   backup_on_save: boolean;
+  /** Ids de módulos/extensiones desactivados (T21). */
+  disabled_ext: string[];
+  /** Rutas de notas con pestaña abierta (se restauran al arrancar). */
+  open_tabs: string[];
+  /** Índice de la pestaña activa dentro de `open_tabs`. */
+  active_tab: number;
 }
 
 /** Cambios de frontmatter (T6). `null` = no tocar; "" en escalares borra. */
@@ -120,6 +128,14 @@ export interface ExtRow {
   id: string;
   name: string;
   detail: string;
+  enabled: boolean;
+}
+
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+  newer: boolean;
+  url: string;
 }
 
 export interface ResolvedTheme {
@@ -182,6 +198,7 @@ export const resolveTheme = (
 ) => invoke<ResolvedTheme>("resolve_theme", { id, systemDark, custom });
 export const extensionsListing = () =>
   invoke<ExtRow[]>("extensions_listing");
+export const checkUpdate = () => invoke<UpdateInfo>("check_update");
 export const syncNow = (id: string) =>
   invoke<void>("sync_now", { id });
 
@@ -199,6 +216,8 @@ export const exportHtml = (
   title: string,
   palette: Palette,
 ) => invoke<void>("export_html", { path, markdown, title, palette });
+export const exportMd = (path: string, markdown: string) =>
+  invoke<void>("export_md", { path, markdown });
 export const exportTheme = (path: string, palette: Palette) =>
   invoke<void>("export_theme", { path, palette });
 export const importTheme = (path: string) =>

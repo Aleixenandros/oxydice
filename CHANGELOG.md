@@ -3,6 +3,67 @@
 Todos los cambios notables de Oxydice (antes RustNotes) se documentan en
 este archivo.
 
+## [0.8.0] - 2026-05-18
+
+### Added
+
+- **Pestañas (una por nota)**: barra de pestañas en el área central; abrir
+  una nota crea su pestaña (si ya está abierta, salta a ella). Punto de
+  «sin guardar», cierre con ✕ o botón central del ratón; conmutar conserva
+  las ediciones sin guardar de cada pestaña. **Se restauran entre sesiones**
+  (`config.open_tabs` / `config.active_tab`); renombrar o eliminar (incluido
+  carpetas) reescribe o cierra las pestañas afectadas.
+- **Vista dividida**: tercer modo del documento (Editar · Dividir · Vista)
+  con el editor y la vista previa en vivo lado a lado.
+- **Columna izquierda contraíble**: el botón ▤ (o `Ctrl/⌘ + B`) colapsa el
+  rail de iconos junto con la barra lateral; botón flotante para reabrir.
+- **Editar metadatos desde el menú de la nota**: clic derecho sobre una
+  nota `.md` → «Editar metadatos» (abre la nota si no lo está). Se quitó el
+  botón de la cabecera del documento.
+- **Módulos activables/desactivables (T21)**: cada módulo/extensión (temas,
+  sync, visor de código, exportador) se puede activar o desactivar desde
+  Ajustes › Extensiones; el estado se persiste (`config.disabled_ext`) y se
+  respeta (visor desactivado → el árbol solo lista `.md`; exportador o temas
+  desactivados → no se ofrecen).
+- **Ajustes por secciones (T22)**: navegación por secciones (Apariencia,
+  Sincronización, Copia de seguridad, Extensiones, Acerca de), una a la vez.
+- **Acerca de (T23)**: autor «Alejandro Soriano»; enlace «Reportar
+  incidencia»; botón «Comprobar actualizaciones» que solo comprueba la
+  release más reciente en GitHub y, si hay una nueva, abre la web (sin
+  auto-updater).
+- **Menú de formato en el editor (T24)**: clic derecho dentro del editor →
+  negrita, cursiva, tachado, código, H1/H2/H3, lista, cita, enlace, sobre la
+  selección. Suprime el menú nativo del webview dentro del editor.
+
+- **Menú nativo del webview eliminado (T19)**: el clic derecho ya no muestra
+  «Inspeccionar»/devtools; solo aparecen los menús propios.
+- **Exportar en el menú de la nota (T20)**: se quitaron los botones de
+  exportación de la cabecera; ahora el clic derecho sobre una nota `.md`
+  ofrece «Exportar ▸» con submenú **HTML · PDF · Markdown** (junto a
+  Renombrar/Eliminar). Funciona también sobre notas no abiertas.
+- **Exportar a Markdown (T26)**: nuevo formato `.md` del exportador.
+- **Fuente del sistema en el editor (T25)**: campo para usar cualquier
+  familia instalada; vacío = fuente integrada (Mono/Sans).
+
+### Changed
+
+- **Rediseño minimalista estilo Obsidian (D2)**: tarjetas planas (sin
+  sombra), marca sobria sin caja de acento, navegación y selección con
+  realce tenue (no relleno fuerte), metadatos del documento como línea
+  ligera sin cajas, modales más discretos. Colores siempre desde el tema.
+- **Iconos monocromáticos**: la lupa de búsqueda (emoji a color) pasa a un
+  glifo de texto `⌕`; `font-variant-emoji: text` fuerza la presentación
+  monocromática del resto. Todos heredan el color del tema.
+- Limpieza de CSS muerto que dejó el rediseño D2.
+
+### Fixed
+
+- El texto ya se puede **seleccionar** (el webview lo impedía); el cromo
+  (botones/navegación) no es seleccionable.
+- **Clic derecho en el área vacía del explorador** ahora abre «Nueva nota /
+  Nueva carpeta» en la raíz del espacio; antes el menú contextual solo
+  existía sobre las filas del árbol.
+
 ## [0.7.0] - 2026-05-17
 
 ### Changed
@@ -200,6 +261,8 @@ este archivo.
   ejecutable e instalable y versión portable `.zip` (Windows).
 - Las actions de CI se ejecutan en Node 24 (Node 20 quedó obsoleto).
 
+[0.8.0]: https://github.com/Aleixenandros/oxydice/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/Aleixenandros/oxydice/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Aleixenandros/RustNotes/compare/v0.3.0...v0.4.0
